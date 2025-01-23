@@ -5,8 +5,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 MQTT_BROKER = "broker.hivemq.com"
 MQTT_CLIENT_ID = "iot-device"
-MQTT_USERNAME = "bakr"
-MQTT_PASSWORD = "bakr"
+# MQTT_USERNAME = "bakr"
+# MQTT_PASSWORD = "bakr"
 MQTT_BROKER_PORT = 1883
 MQTT_TOPIC = "iot/temp"
 
@@ -27,7 +27,7 @@ def simulate_temperature():
 
 def main():
     client = mqtt.Client(client_id=MQTT_CLIENT_ID)
-    client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
+    # client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
     client.on_connect = on_connect
     client.on_message = on_message
     client.on_publish = on_publish
