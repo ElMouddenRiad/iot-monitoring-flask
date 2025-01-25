@@ -5,29 +5,45 @@ from concurrent.futures import ThreadPoolExecutor
 
 MQTT_BROKER = "broker.hivemq.com"
 MQTT_CLIENT_ID = "iot-device"
-# MQTT_USERNAME = "bakr"
-# MQTT_PASSWORD = "bakr"
+MQTT_USERNAME = "bakr"
+MQTT_PASSWORD = "bakr" 
 MQTT_BROKER_PORT = 1883
 MQTT_TOPIC = "iot/temp"
 
 def on_connect(client, userdata, flags, rc):
-    print("Connected with result code "+str(rc))
-    client.subscribe(MQTT_TOPIC)
+    if rc == 0:
+        print(f"Successfully connected to MQTT broker with client ID: {MQTT_CLIENT_ID}")
+        client.subscribe(MQTT_TOPIC)
+    else:
+        print(f"Failed to connect with result code: {rc}")
 
 def on_message(client, userdata, msg):
-    print(msg.topic+" "+str(msg.payload))
+    try:
+        payload = msg.payload.decode('utf-8')
+        print(f"Received message on {msg.topic}: {payload}")
+    except Exception as e:
+        print(f"Error processing message: {e}")
 
 def on_publish(client, userdata, mid):
-    print("Message "+str(mid)+" sent")
+    print(f"Message {mid} published successfully")
 
-def simulate_temperature():
-    """Simulate temperature between 20-30°C with random fluctuations"""
+def simulate_temperature(device_info=None):
+    """
+    Simulate temperature between 20-30°C with random fluctuations
+    Takes into account device location for more realistic simulation
+    """
     base_temp = 25.0
-    return round(base_temp + random.uniform(-5, 5), 2)
+    if device_info and 'location' in device_info:
+        # Adjust base temperature based on latitude
+        latitude_factor = (device_info['location']['latitude'] - 37.7749) * 0.1
+        base_temp += latitude_factor
+    
+    fluctuation = random.uniform(-2, 2)  # Smaller fluctuations for more realistic data
+    return round(base_temp + fluctuation, 2)
 
-def main():
-    client = mqtt.Client(client_id=MQTT_CLIENT_ID)
-    # client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
+def run_device(device_info):
+    client = mqtt.Client(client_id=f"{MQTT_CLIENT_ID}-{device_info['mac']}")
+    client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
     client.on_connect = on_connect
     client.on_message = on_message
     client.on_publish = on_publish
@@ -37,15 +53,24 @@ def main():
         client.loop_start()
 
         while True:
-            temperature = simulate_temperature()
-            payload = f"{temperature}"
-            client.publish(MQTT_TOPIC, payload)
-            time.sleep(5)
+            temperature = simulate_temperature(device_info)
+            payload = {
+                'device_id': device_info['mac'],
+                'temperature': temperature,
+                'location': device_info['location'],
+                'timestamp': time.strftime('%Y-%m-%d %H:%M:%S')
+            }
+            # Convert payload to string for publishing
+            payload_str = str(payload)
+            client.publish(device_info['topic'], payload_str)
+            time.sleep(device_info['frequency'])
 
-    except KeyboardInterrupt:
-        print("\nDisconnecting from broker")
-        client.disconnect()
+    except (KeyboardInterrupt, Exception) as e:
+        print(f"Error in device {device_info['mac']}: {e}")
+    finally:
         client.loop_stop()
+        client.disconnect()
+        return  # Ensure the thread exits
 
 if __name__ == "__main__":
     devices = [
@@ -56,7 +81,7 @@ if __name__ == "__main__":
                 'longitude': -122.4194,
                 'latitude': 37.7749
             },
-            'frequency': 60   
+            'frequency': 15   
         },
         {
             'mac': '00:00:00:00:00:02',
@@ -65,8 +90,9 @@ if __name__ == "__main__":
                 'longitude': -122.4194,
                 'latitude': 37.7749
             },
-            'frequency': 60   
+            'frequency': 15   
         }
     ]
-    with ThreadPoolExecutor() as executor:
-        executor.submit(main)
+    
+    for device in devices:
+        run_device(device)

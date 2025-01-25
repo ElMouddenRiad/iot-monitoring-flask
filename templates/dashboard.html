@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>IoT Temperature Dashboard</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: gainsboro; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .card { 
+            background: #f0f0f0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        #temperature-chart { height: 400px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>IoT Temperature Dashboard</h1>
+        
+        <div class="card">
+            <h2>Latest Temperature Readings</h2>
+            <div id="temperature-chart"></div>
+        </div>
+        
+        <div class="card">
+            <h2>Statistics</h2>
+            <div id="stats"></div>
+        </div>
+    </div>
+
+    <script>
+        function updateChart() {
+            $.get('/api/data', function(data) {
+                const times = data.map(d => d.timestamp);
+                const temps = data.map(d => d.temperature);
+                
+                const trace = {
+                    x: times,
+                    y: temps,
+                    type: 'scatter'
+                };
+                
+                Plotly.newPlot('temperature-chart', [trace]);
+            });
+        }
+
+        function updateStats() {
+            $.get('/api/stats', function(data) {
+                if (data.error) {
+                    $('#stats').html('<p>No data available</p>');
+                    return;
+                }
+                
+                $('#stats').html(`
+                    <p>Average Temperature: ${data.average_temp}°C</p>
+                    <p>Maximum Temperature: ${data.max_temp}°C</p>
+                    <p>Minimum Temperature: ${data.min_temp}°C</p>
+                    <p>Total Readings: ${data.num_readings}</p>
+                    <p>Last Updated: ${data.last_updated}</p>
+                `);
+            });
+        }
+
+        // Update every 5 seconds
+        setInterval(() => {
+            updateChart();
+            updateStats();
+        }, 5000);
+
+        // Initial update
+        updateChart();
+        updateStats();
+    </script>
+</body>
+</html> 
