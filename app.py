@@ -2,9 +2,14 @@ from flask import Flask, jsonify, render_template, request
 from flask_mqtt import Mqtt
 from datetime import datetime
 from functools import wraps
+from signing.auth import auth_bp, db
+from device_management.device_manage import device_bp
+from monitoring.monitor import socketio, store_temperature_reading
 import os
 import pika
 import json
+import threading
+import paho.mqtt.client as mqtt
 
 app = Flask(__name__)
 
@@ -19,6 +24,9 @@ app.config['API_KEY_REQUIRED'] = os.getenv('API_KEY_REQUIRED', 'False').lower() 
 app.config['API_KEY'] = os.getenv('API_SECRET_KEY', 'your-secret-key')
 app.config['RABBITMQ_HOST'] = 'localhost'
 app.config['RABBITMQ_QUEUE'] = 'device_events'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://bakr:bakr1234@localhost/iot_platform'
+app.config['MQTT_TOPIC'] = 'iot/temp'
+app.config['MQTT_CLIENT_ID'] = 'server-subscriber'
 
 mqtt = Mqtt(app)
 MQTT_TOPIC = 'iot/temp'
@@ -55,6 +63,9 @@ def message_callback(client, userdata, msg):
                 messages.pop(0)
                 
             print(f'Received temperature data: {payload}')
+            
+            # Store the temperature reading and broadcast to connected clients
+            store_temperature_reading(payload)
         except Exception as e:
             print(f'Error processing message: {e}')
 
@@ -214,5 +225,33 @@ def delete_device(device_id):
     
     return jsonify({'message': 'Device deleted successfully'})
 
+def start_mqtt_client():
+    client = mqtt.Client(app.config['MQTT_CLIENT_ID'])
+    client.username_pw_set(app.config['MQTT_USERNAME'], app.config['MQTT_PASSWORD'])
+    client.on_connect = connect_callback
+    client.on_message = message_callback
+
+    try:
+        client.connect(app.config['MQTT_BROKER'], app.config['MQTT_PORT'], 60)
+        client.loop_forever()
+    except Exception as e:
+        print(f"Error connecting to MQTT broker: {e}")
+
+@app.route('/health')
+def health_check():
+    return {'status': 'healthy'}, 200
+
+def create_app():
+    with app.app_context():
+        db.create_all()
+    
+    # Start MQTT client in a separate thread
+    mqtt_thread = threading.Thread(target=start_mqtt_client)
+    mqtt_thread.daemon = True
+    mqtt_thread.start()
+    
+    return app
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    app = create_app()
+    socketio.run(app, host='0.0.0.0', port=5000, debug=True)
