@@ -7,14 +7,14 @@ from datetime import timedelta
 
 auth_bp = Blueprint('auth', __name__)
 # Config
-auth_bp.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://bakr:bakr1234@postgres:5432/iot_platform'
-auth_bp.config['JWT_SECRET_KEY'] = 'your-secret-key'
-auth_bp.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=1)
+# auth_bp.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://bakr:bakr1234@localhost:5432/iot_platform'
+# auth_bp.config['JWT_SECRET_KEY'] = 'secret'
+# auth_bp.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=1)
 
 # Initialize extensions
-db = SQLAlchemy(auth_bp)
-jwt = JWTManager(auth_bp)
-redis_client = redis.Redis(host='redis', port=6379, db=0)
+db = SQLAlchemy()
+jwt = JWTManager()
+redis_client = redis.Redis(host='localhost', port=6379, db=0)
 
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)

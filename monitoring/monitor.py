@@ -5,49 +5,45 @@ import pika
 import json
 import threading
 
-app = Flask(__name__)
-socketio = SocketIO(app, cors_allowed_origins="*")
+# Create socketio without app
+socketio = SocketIO(cors_allowed_origins="*")
 
-# MongoDB connection
+# MongoDB Configuration
 mongo_client = MongoClient('mongodb+srv://bakr:bakr1234@iotproject.dl598.mongodb.net/?retryWrites=true&w=majority&appName=IotProject')
 db = mongo_client['iot_platform']
-events_collection = db['device_events']
+readings_collection = db['temperature_readings']
 
-def consume_rabbitmq_messages():
-    credentials = pika.PlainCredentials('bakr', 'bakr1234')
-    connection = pika.BlockingConnection(
-        pika.ConnectionParameters(host='rabbitmq', credentials=credentials))
+def handle_device_event(ch, method, properties, body):
+    event = json.loads(body)
+    socketio.emit('device_event', event)
+
+def start_rabbitmq_consumer():
+    connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
     channel = connection.channel()
-    
     channel.queue_declare(queue='device_events')
-    
-    def callback(ch, method, properties, body):
-        event_data = json.loads(body)
-        
-        # Store event in MongoDB
-        events_collection.insert_one(event_data)
-        
-        # Emit event to connected clients
-        socketio.emit('device_event', event_data)
-    
     channel.basic_consume(
         queue='device_events',
-        on_message_callback=callback,
+        on_message_callback=handle_device_event,
         auto_ack=True
     )
-    
     channel.start_consuming()
-
-@app.route('/events/<device_id>', methods=['GET'])
-def get_device_events(device_id):
-    events = list(events_collection.find({'device_id': device_id}, {'_id': 0}))
-    return jsonify(events)
 
 @socketio.on('connect')
 def handle_connect():
     print('Client connected')
 
 def store_temperature_reading(data):
-    events_collection.insert_one(data)
-    socketio.emit('new_reading', data)
+    # Store in MongoDB
+    result = readings_collection.insert_one(data)
+    
+    # Create a new dict for socket emission, converting ObjectId to string
+    emit_data = data.copy()
+    emit_data['_id'] = str(result.inserted_id)  # Convert ObjectId to string
+    
+    # Emit the modified data
+    socketio.emit('new_temperature', emit_data)
+
+def init_socketio(app):
+    socketio.init_app(app)
+    return socketio
 

@@ -1,17 +1,31 @@
 from flask import Flask, jsonify, render_template, request
 from flask_mqtt import Mqtt
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
-from signing.auth import auth_bp, db
+from signing.auth import auth_bp, db, jwt
 from device_management.device_manage import device_bp
-from monitoring.monitor import socketio, store_temperature_reading
+from monitoring.monitor import socketio, store_temperature_reading, init_socketio
 import os
 import pika
 import json
 import threading
-import paho.mqtt.client as mqtt
+import paho.mqtt.client as paho_mqtt
+from bson import ObjectId
+from flask.json.provider import JSONProvider
 
 app = Flask(__name__)
+# Initialize socketio with our main app
+init_socketio(app)
+
+class CustomJSONProvider(JSONProvider):
+    def default(self, obj):
+        if isinstance(obj, ObjectId):
+            return str(obj)
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        return super().default(obj)
+
+app.json_provider_class = CustomJSONProvider
 
 app.config['MQTT_BROKER_URL'] = 'broker.hivemq.com'
 app.config['MQTT_BROKER_PORT'] = 1883
@@ -24,73 +38,57 @@ app.config['API_KEY_REQUIRED'] = os.getenv('API_KEY_REQUIRED', 'False').lower() 
 app.config['API_KEY'] = os.getenv('API_SECRET_KEY', 'your-secret-key')
 app.config['RABBITMQ_HOST'] = 'localhost'
 app.config['RABBITMQ_QUEUE'] = 'device_events'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://bakr:bakr1234@localhost/iot_platform'
+app.config['SQLALCHEMY_DATABASE_URI'] = "postgresql://admin:admin123@localhost:5432/iot_platform"
 app.config['MQTT_TOPIC'] = 'iot/temp'
 app.config['MQTT_CLIENT_ID'] = 'server-subscriber'
+app.config['JWT_SECRET_KEY'] = 'your-secret-key'
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=1)
 
-mqtt = Mqtt(app)
-MQTT_TOPIC = 'iot/temp'
 messages = []  # Store received messages
 devices = {}
 
-@mqtt.on_connect()
-def connect_callback(client, userdata, flags, rc):
+# Initialize extensions with the app
+db.init_app(app)
+jwt.init_app(app)
+
+# Register blueprint
+app.register_blueprint(auth_bp)
+
+# MQTT callbacks
+def on_connect(client, userdata, flags, rc):
     if rc == 0:
-        print('Connected with result code '+str(rc))
-        mqtt.subscribe(MQTT_TOPIC)
+        print(f"Connected to MQTT Broker!")
+        client.subscribe(app.config['MQTT_TOPIC'])
     else:
-        print('Failed to connect with result code '+str(rc))
+        print(f"Failed to connect, return code {rc}")
 
-@mqtt.on_disconnect()
-def disconnect_callback(client, userdata, rc):
-    print('Disconnected with result code '+str(rc))
-
-@mqtt.on_message()
-def message_callback(client, userdata, msg):
-    if msg.topic == MQTT_TOPIC:
-        try:
-            payload = eval(msg.payload.decode('utf-8'))  # Convert string representation back to dict
-            
-            # Add timestamp and validate data
-            if 'temperature' not in payload:
-                raise ValueError("Missing temperature data")
-                
+def on_message(client, userdata, msg):
+    try:
+        payload = json.loads(msg.payload.decode())
+        if 'timestamp' not in payload:
             payload['timestamp'] = datetime.now().isoformat()
-            messages.append(payload)
             
-            # Limit stored messages
-            if len(messages) > app.config['MAX_STORED_MESSAGES']:
-                messages.pop(0)
-                
-            print(f'Received temperature data: {payload}')
+        message_data = {
+            'device_id': payload.get('device_id'),
+            'temperature': payload.get('temperature'),
+            'location': payload.get('location'),
+            'timestamp': payload.get('timestamp')
+        }
+        
+        messages.append(message_data)
+        
+        if len(messages) > app.config['MAX_STORED_MESSAGES']:
+            messages.pop(0)
             
-            # Store the temperature reading and broadcast to connected clients
-            store_temperature_reading(payload)
-        except Exception as e:
-            print(f'Error processing message: {e}')
+        store_temperature_reading(message_data)  # This will handle both storage and socket emission
+        
+    except Exception as e:
+        print(f"Error processing message: {e}")
 
-# Add basic auth decorator
-def require_api_key(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        if not app.config['API_KEY_REQUIRED']:
-            return f(*args, **kwargs)
-            
-        api_key = request.headers.get('X-API-Key')
-        if not api_key:
-            return jsonify({
-                'error': 'Missing API key',
-                'message': 'Please provide an API key using the X-API-Key header'
-            }), 401
-            
-        if api_key != app.config['API_KEY']:
-            return jsonify({
-                'error': 'Invalid API key',
-                'message': 'The provided API key is not valid'
-            }), 401
-            
-        return f(*args, **kwargs)
-    return decorated
+def on_disconnect(client, userdata, rc):
+    print(f'Disconnected with result code {rc}')
+    if rc != 0:
+        print("Unexpected disconnection. Attempting to reconnect...")
 
 @app.route('/')
 def index():
@@ -99,17 +97,23 @@ def index():
                          total_readings=len(messages))
 
 @app.route('/api/data')
-@require_api_key
 def get_data():
-    return jsonify(messages)
+    try:
+        return jsonify([{
+            'device_id': msg.get('device_id'),
+            'temperature': msg.get('temperature'),
+            'location': msg.get('location'),
+            'timestamp': msg.get('timestamp')
+        } for msg in messages])
+    except Exception as e:
+        print(f"Error serializing data: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/api/latest')
-@require_api_key
 def get_latest():
     return jsonify(messages[-1] if messages else {'error': 'No data available'})
 
 @app.route('/api/stats')
-@require_api_key
 def get_stats():
     if not messages:
         return jsonify({'error': 'No data available'})
@@ -226,14 +230,27 @@ def delete_device(device_id):
     return jsonify({'message': 'Device deleted successfully'})
 
 def start_mqtt_client():
-    client = mqtt.Client(app.config['MQTT_CLIENT_ID'])
-    client.username_pw_set(app.config['MQTT_USERNAME'], app.config['MQTT_PASSWORD'])
-    client.on_connect = connect_callback
-    client.on_message = message_callback
-
     try:
-        client.connect(app.config['MQTT_BROKER'], app.config['MQTT_PORT'], 60)
-        client.loop_forever()
+        # Create client with paho-mqtt directly
+        client = paho_mqtt.Client(client_id=app.config['MQTT_CLIENT_ID'])
+        client.username_pw_set(app.config['MQTT_USERNAME'], app.config['MQTT_PASSWORD'])
+        
+        # Set callbacks
+        client.on_connect = on_connect
+        client.on_message = on_message
+        client.on_disconnect = on_disconnect
+
+        # Set keep alive interval
+        client.keepalive = 60
+        # Enable automatic reconnection
+        client.reconnect_delay_set(min_delay=1, max_delay=120)
+
+        # Connect to broker
+        client.connect(app.config['MQTT_BROKER_URL'], app.config['MQTT_BROKER_PORT'], 60)
+        
+        # Use loop_start() instead of loop_forever() for better handling
+        client.loop_start()
+
     except Exception as e:
         print(f"Error connecting to MQTT broker: {e}")
 
@@ -253,5 +270,10 @@ def create_app():
     return app
 
 if __name__ == '__main__':
-    app = create_app()
-    socketio.run(app, host='0.0.0.0', port=5000, debug=True)
+    try:
+        app = create_app()
+        socketio.run(app, host='0.0.0.0', port=5000, debug=True)
+    except KeyboardInterrupt:
+        print("Shutting down gracefully...")
+    except Exception as e:
+        print(f"Error: {e}")

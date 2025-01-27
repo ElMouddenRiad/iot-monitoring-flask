@@ -4,7 +4,11 @@
     <title>IoT Temperature Dashboard</title>
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+
 </head>
 <body>
     <div class="container">
@@ -29,6 +33,11 @@
         <div class="card">
             <h2>Statistics</h2>
             <div id="stats"></div>
+        </div>
+
+        <div class="card">
+            <h2>Device Locations</h2>
+            <div id="map" style="height: 400px;"></div>
         </div>
     </div>
 
@@ -60,56 +69,210 @@
     </div>
 
     <script>
-        function updateChart() {
-            $.get('/api/data', function(data) {
-                const times = data.map(d => d.timestamp);
-                const temps = data.map(d => d.temperature);
-                
-                const trace = {
-                    x: times,
-                    y: temps,
-                    type: 'scatter'
-                };
-                
-                Plotly.newPlot('temperature-chart', [trace]);
+        let currentDevices = {};
+        let selectedDevice = null;
+        let socket = io();
+        let map;
+        let markers = {};
+
+        // Initialize map
+        function initMap() {
+            map = L.map('map').setView([0, 0], 2);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+
+            // Add click handler to map for adding new devices
+            map.on('click', function(e) {
+                if ($('#device-modal').is(':visible')) {
+                    $('#device-latitude').val(e.latlng.lat.toFixed(6));
+                    $('#device-longitude').val(e.latlng.lng.toFixed(6));
+                }
             });
         }
-        
-        function updateStats() {
-            $.get('/api/stats', function(data) {
-                if (data.error) {
+
+        // Socket.IO event handlers
+        socket.on('connect', () => {
+            console.log('Connected to WebSocket');
+        });
+
+        socket.on('new_reading', (data) => {
+            console.log('New reading received:', data);
+            updateChartWithNewData(data);
+            updateStatsWithNewData(data);
+            updateMarkerPosition(data);
+        });
+
+        function updateMarkerPosition(data) {
+            if (!data.location || !data.location.latitude || !data.location.longitude) return;
+
+            if (!markers[data.device_id]) {
+                markers[data.device_id] = L.marker([data.location.latitude, data.location.longitude])
+                    .bindPopup(`Device: ${data.device_id}<br>Temperature: ${data.temperature}°C`)
+                    .addTo(map);
+            } else {
+                markers[data.device_id]
+                    .setLatLng([data.location.latitude, data.location.longitude])
+                    .getPopup().setContent(`Device: ${data.device_id}<br>Temperature: ${data.temperature}°C`);
+            }
+        }
+
+        function updateChartWithNewData(data) {
+            console.log('Updating chart with:', data);
+            if (!selectedDevice || selectedDevice === data.device_id) {
+                const timestamp = new Date(data.timestamp).toLocaleTimeString();
+                
+                // Check if chart exists
+                const chartDiv = document.getElementById('temperature-chart');
+                if (!chartDiv.data) {
+                    // Initialize chart if it doesn't exist
+                    const trace = {
+                        x: [timestamp],
+                        y: [data.temperature],
+                        type: 'scatter',
+                        mode: 'lines+markers',
+                        name: data.device_id
+                    };
+                    const layout = {
+                        title: 'Temperature Readings',
+                        xaxis: { title: 'Time' },
+                        yaxis: { title: 'Temperature (°C)' }
+                    };
+                    Plotly.newPlot('temperature-chart', [trace], layout);
+                } else {
+                    // Update existing chart
+                    Plotly.extendTraces('temperature-chart', {
+                        x: [[timestamp]],
+                        y: [[data.temperature]]
+                    }, [0]);
+
+                    // Keep only last 50 points
+                    if (chartDiv.data[0].x.length > 50) {
+                        Plotly.relayout('temperature-chart', {
+                            xaxis: {
+                                range: [
+                                    chartDiv.data[0].x[chartDiv.data[0].x.length - 50],
+                                    chartDiv.data[0].x[chartDiv.data[0].x.length - 1]
+                                ]
+                            }
+                        });
+                    }
+                }
+            }
+        }
+
+        function updateStatsWithNewData(data) {
+            console.log('Updating stats with:', data);
+            $.get('/api/stats', function(stats) {
+                if (stats.error) {
                     $('#stats').html('<p>No data available</p>');
                     return;
                 }
                 
                 $('#stats').html(`
-                    <p>Average Temperature: ${data.average_temp}°C</p>
-                    <p>Maximum Temperature: ${data.max_temp}°C</p>
-                    <p>Minimum Temperature: ${data.min_temp}°C</p>
-                    <p>Total Readings: ${data.num_readings}</p>
-                    <p>Last Updated: ${data.last_updated}</p>
+                    <div class="stats-grid">
+                        <div class="stat-item">
+                            <h3>Current Reading</h3>
+                            <p>Device ID: ${data.device_id}</p>
+                            <p>Temperature: ${data.temperature}°C</p>
+                            <p>Time: ${new Date(data.timestamp).toLocaleString()}</p>
+                        </div>
+                        <div class="stat-item">
+                            <h3>Statistics</h3>
+                            <p>Average: ${stats.average_temp}°C</p>
+                            <p>Maximum: ${stats.max_temp}°C</p>
+                            <p>Minimum: ${stats.min_temp}°C</p>
+                            <p>Total Readings: ${stats.num_readings}</p>
+                        </div>
+                    </div>
                 `);
             });
         }
-        
+
+        function updateChart() {
+            $.get('/api/data', function(data) {
+                console.log('Fetched historical data:', data);
+                const traces = {};
+                
+                // Group data by device
+                data.forEach(reading => {
+                    if (!traces[reading.device_id]) {
+                        traces[reading.device_id] = {
+                            x: [],
+                            y: [],
+                            type: 'scatter',
+                            mode: 'lines+markers',
+                            name: reading.device_id
+                        };
+                    }
+                    traces[reading.device_id].x.push(new Date(reading.timestamp).toLocaleTimeString());
+                    traces[reading.device_id].y.push(reading.temperature);
+                });
+
+                const layout = {
+                    title: 'Temperature Readings',
+                    xaxis: { title: 'Time' },
+                    yaxis: { title: 'Temperature (°C)' }
+                };
+
+                Plotly.newPlot('temperature-chart', Object.values(traces), layout);
+            });
+        }
+
         function loadDevices(searchTerm = '') {
             $.get(`/api/devices${searchTerm ? '?search=' + searchTerm : ''}`, function(devices) {
                 currentDevices = devices;
                 renderDeviceList();
+                
+                // Update map with all devices
+                Object.entries(devices).forEach(([mac, device]) => {
+                    device.mac = mac; // Ensure MAC is included in device object
+                    updateDeviceMarker(device);
+                });
+
+                // Fit map bounds to show all markers if there are any
+                if (Object.keys(markers).length > 0) {
+                    const markerBounds = L.featureGroup(Object.values(markers)).getBounds();
+                    map.fitBounds(markerBounds, { padding: [50, 50] });
+                }
             });
         }
+        function updateDeviceMarker(device) {
+        if (!device.location || !device.location.latitude || !device.location.longitude) return;
+
+        const markerContent = `
+            <strong>${device.name}</strong><br>
+            MAC: ${device.mac}<br>
+            Status: ${device.status}
+        `;
+
+        if (!markers[device.mac]) {
+            // Create new marker
+            markers[device.mac] = L.marker([device.location.latitude, device.location.longitude])
+                .bindPopup(markerContent)
+                .addTo(map);
+        } else {
+            // Update existing marker
+            markers[device.mac]
+                .setLatLng([device.location.latitude, device.location.longitude])
+                .getPopup().setContent(markerContent);
+        }
+    }
 
         function renderDeviceList() {
             const deviceList = $('#device-list');
             deviceList.empty();
             
             Object.entries(currentDevices).forEach(([mac, device]) => {
+                const isSelected = selectedDevice === mac;
                 deviceList.append(`
-                    <div class="device-item" data-mac="${mac}">
+                    <div class="device-item ${isSelected ? 'selected' : ''}" data-mac="${mac}">
                         <div>
                             <strong>${device.name}</strong>
                             <br>
                             <small>${mac}</small>
+                            <br>
+                            <small>Status: ${device.status}</small>
                         </div>
                         <div>
                             <button class="btn-primary" onclick="selectDevice('${mac}')">View</button>
@@ -121,6 +284,7 @@
             });
         }
 
+        // Device management functions
         function showAddDeviceModal() {
             $('#modal-title').text('Add Device');
             $('#device-form')[0].reset();
@@ -152,7 +316,6 @@
                         if (selectedDevice === mac) {
                             selectedDevice = null;
                             updateChart();
-                            updateStats();
                         }
                     }
                 });
@@ -161,11 +324,11 @@
 
         function selectDevice(mac) {
             selectedDevice = mac;
+            renderDeviceList();
             updateChart();
-            updateStats();
         }
 
-        // Event Handlers
+        // Event handlers
         $('#device-form').submit(function(e) {
             e.preventDefault();
             
@@ -187,25 +350,45 @@
                 method: method,
                 contentType: 'application/json',
                 data: JSON.stringify(deviceData),
-                success: function() {
+                success: function(response) {
                     hideDeviceModal();
                     loadDevices();
+                    
+                    // Update or add marker for the new/edited device
+                    deviceData.mac = deviceData.mac;
+                    deviceData.status = 'active';
+                    updateDeviceMarker(deviceData);
+                    
+                    // Center map on the new/edited device
+                    map.setView([deviceData.location.latitude, deviceData.location.longitude], 13);
                 }
             });
         });
 
+        $('#search-device').on('input', function() {
+            loadDevices($(this).val());
+        });
 
-        // Update every 10 seconds
-        setInterval(() => {
+        // Initialize everything when document is ready
+        $(document).ready(function() {
+            initMap();
+            loadDevices();
             updateChart();
-            updateStats();
-        }, 10000);
 
-        // Initial update
-        updateChart();
-        updateStats();
-        loadDevices();
-
+            // Update data periodically
+            setInterval(() => {
+                updateChart();
+                $.get('/api/stats', function(stats) {
+                    if (!stats.error) {
+                        updateStatsWithNewData({
+                            device_id: selectedDevice || 'All Devices',
+                            temperature: stats.average_temp,
+                            timestamp: stats.last_updated
+                        });
+                    }
+                });
+            }, 10000);
+        });
     </script>
 </body>
 </html> 
