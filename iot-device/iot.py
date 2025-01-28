@@ -142,7 +142,7 @@ if __name__ == "__main__":
                 'longitude': -122.4194,  # San Francisco
                 'latitude': 37.7749
             },
-            'frequency': 10
+            'frequency': 40
         },
         {
             'mac': '00:00:00:00:00:02',
@@ -151,7 +151,7 @@ if __name__ == "__main__":
                 'longitude': -74.0060,  # New York
                 'latitude': 40.7128
             },
-            'frequency': 10
+            'frequency': 40
         }
     ]
     

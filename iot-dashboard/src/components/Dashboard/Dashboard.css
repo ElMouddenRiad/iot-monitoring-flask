@@ -1,3 +1,22 @@
+.dashboard {
+    padding: 20px;
+}
+
+.paper {
+    padding: 20px;
+    height: 100%;
+}
+
+.device-list-header {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.add-button {
+    white-space: nowrap;
+}
+/*************************/
 body { 
     font-family: Arial, sans-serif; 
     margin: 20px; 

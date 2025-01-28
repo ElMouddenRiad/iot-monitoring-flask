@@ -1,5 +1,4 @@
 from flask import Flask, jsonify, render_template, request
-from flask_mqtt import Mqtt
 from datetime import datetime, timedelta
 from functools import wraps
 from signing.auth import auth_bp, db, jwt
@@ -12,8 +11,10 @@ import threading
 import paho.mqtt.client as paho_mqtt
 from bson import ObjectId
 from flask.json.provider import JSONProvider
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app)
 # Initialize socketio with our main app
 init_socketio(app)
 
@@ -39,6 +40,7 @@ app.config['API_KEY'] = os.getenv('API_SECRET_KEY', 'your-secret-key')
 app.config['RABBITMQ_HOST'] = 'localhost'
 app.config['RABBITMQ_QUEUE'] = 'device_events'
 app.config['SQLALCHEMY_DATABASE_URI'] = "postgresql://admin:admin123@localhost:5432/iot_platform"
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['MQTT_TOPIC'] = 'iot/temp'
 app.config['MQTT_CLIENT_ID'] = 'server-subscriber'
 app.config['JWT_SECRET_KEY'] = 'your-secret-key'
@@ -53,6 +55,7 @@ jwt.init_app(app)
 
 # Register blueprint
 app.register_blueprint(auth_bp)
+app.register_blueprint(device_bp)
 
 # MQTT callbacks
 def on_connect(client, userdata, flags, rc):
@@ -61,10 +64,39 @@ def on_connect(client, userdata, flags, rc):
         client.subscribe(app.config['MQTT_TOPIC'])
     else:
         print(f"Failed to connect, return code {rc}")
+        # Add specific error messages
+        error_codes = {
+            1: "Incorrect protocol version",
+            2: "Invalid client identifier",
+            3: "Server unavailable",
+            4: "Bad username or password",
+            5: "Not authorized"
+        }
+        print(f"Error: {error_codes.get(rc, 'Unknown error')}")
 
 def on_message(client, userdata, msg):
     try:
-        payload = json.loads(msg.payload.decode())
+        # Add debug print to see raw message
+        print(f"Raw message received: {msg.payload}")
+        
+        # Check if payload is empty
+        if not msg.payload:
+            print("Empty payload received")
+            return
+            
+        # Decode and parse payload with error handling
+        try:
+            payload = json.loads(msg.payload.decode('utf-8'))
+        except json.JSONDecodeError as e:
+            print(f"Invalid JSON received: {msg.payload.decode('utf-8')}")
+            print(f"JSON decode error: {e}")
+            return
+            
+        if not isinstance(payload, dict):
+            print(f"Invalid message format: {payload}")
+            return
+            
+        # Process valid message
         if 'timestamp' not in payload:
             payload['timestamp'] = datetime.now().isoformat()
             
@@ -75,12 +107,17 @@ def on_message(client, userdata, msg):
             'timestamp': payload.get('timestamp')
         }
         
+        # Validate required fields
+        if not all(message_data.get(field) for field in ['device_id', 'temperature']):
+            print(f"Missing required fields in message: {message_data}")
+            return
+            
         messages.append(message_data)
         
         if len(messages) > app.config['MAX_STORED_MESSAGES']:
             messages.pop(0)
             
-        store_temperature_reading(message_data)  # This will handle both storage and socket emission
+        store_temperature_reading(message_data)
         
     except Exception as e:
         print(f"Error processing message: {e}")
@@ -231,24 +268,30 @@ def delete_device(device_id):
 
 def start_mqtt_client():
     try:
-        # Create client with paho-mqtt directly
-        client = paho_mqtt.Client(client_id=app.config['MQTT_CLIENT_ID'])
-        client.username_pw_set(app.config['MQTT_USERNAME'], app.config['MQTT_PASSWORD'])
+        # Create client with clean_session=True to avoid stale sessions
+        client = paho_mqtt.Client(client_id=app.config['MQTT_CLIENT_ID'], clean_session=True)
         
         # Set callbacks
         client.on_connect = on_connect
         client.on_message = on_message
         client.on_disconnect = on_disconnect
 
-        # Set keep alive interval
-        client.keepalive = 60
-        # Enable automatic reconnection
-        client.reconnect_delay_set(min_delay=1, max_delay=120)
-
-        # Connect to broker
-        client.connect(app.config['MQTT_BROKER_URL'], app.config['MQTT_BROKER_PORT'], 60)
+        # Set credentials
+        client.username_pw_set(app.config['MQTT_USERNAME'], app.config['MQTT_PASSWORD'])
         
-        # Use loop_start() instead of loop_forever() for better handling
+        # Set keepalive to a lower value
+        client.keepalive = 30
+        
+        # Enable automatic reconnection with shorter delays
+        client.reconnect_delay_set(min_delay=1, max_delay=30)
+        
+        # Set will message for clean disconnection
+        client.will_set(app.config['MQTT_TOPIC'], payload="Offline", qos=1, retain=True)
+        
+        # Connect with clean_session=True
+        client.connect(app.config['MQTT_BROKER_URL'], app.config['MQTT_BROKER_PORT'], keepalive=30)
+        
+        # Use loop_start for better reconnection handling
         client.loop_start()
 
     except Exception as e:

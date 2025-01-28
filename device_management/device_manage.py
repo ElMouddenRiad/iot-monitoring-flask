@@ -36,16 +36,58 @@ def get_devices():
 @device_bp.route('/api/devices', methods=['POST'])
 def add_device():
     device_data = request.get_json()
-    device = DeviceDAL.add_device(device_data)
     
-    # Publish event to RabbitMQ
-    publish_device_event('device_added', {
-        'mac': device.mac,
-        'name': device.name,
-        'location': {
-            'latitude': device.latitude,
-            'longitude': device.longitude
+    # Validate required fields
+    required_fields = ['mac', 'name', 'location']
+    if not all(field in device_data for field in required_fields):
+        return jsonify({'error': 'Missing required fields'}), 400
+    
+    try:
+        device = DeviceDAL.add_device(device_data)
+        
+        # Prepare response data
+        response_data = {
+            'mac': device.mac,
+            'name': device.name,
+            'location': {
+                'latitude': device.latitude,
+                'longitude': device.longitude
+            },
+            'status': device.status
         }
-    })
+        
+        # Publish event to RabbitMQ
+        publish_device_event('device_added', response_data)
+        
+        return jsonify(response_data), 201
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+@device_bp.route('/api/devices/<mac>', methods=['PUT'])
+def update_device(mac):
+    device_data = request.get_json()
+    device = DeviceDAL.update_device(mac, device_data)
     
-    return jsonify({'message': 'Device added successfully'}), 201
+    if device:
+        response_data = {
+            'mac': device.mac,
+            'name': device.name,
+            'location': {
+                'latitude': device.latitude,
+                'longitude': device.longitude
+            },
+            'status': device.status
+        }
+        publish_device_event('device_updated', response_data)
+        return jsonify(response_data)
+    
+    return jsonify({'error': 'Device not found'}), 404
+
+@device_bp.route('/api/devices/<mac>', methods=['DELETE'])
+def delete_device(mac):
+    device = DeviceDAL.delete_device(mac)
+    if device:
+        publish_device_event('device_deleted', {'mac': mac})
+        return jsonify({'message': 'Device deleted successfully'})
+    return jsonify({'error': 'Device not found'}), 404
