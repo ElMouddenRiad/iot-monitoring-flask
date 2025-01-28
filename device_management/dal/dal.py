@@ -63,6 +63,8 @@ print(hourly_dataframe)
 from flask_sqlalchemy import SQLAlchemy
 from redis import Redis
 import json
+from ..models import Device  # Import Device from models
+from extensions import db
 
 db = SQLAlchemy()
 redis_client = Redis(host='localhost', port=6379, db=0)
@@ -70,75 +72,25 @@ redis_client = Redis(host='localhost', port=6379, db=0)
 class DeviceDAL:
     @staticmethod
     def get_devices(search_term=None):
-        try:
-            # Try cache first
-            if not search_term:
-                cached_devices = redis_client.get('devices_list')
-                if cached_devices:
-                    return json.loads(cached_devices)
-            
-            from ..models.device import Device
-            query = Device.query
-            
-            if search_term:
-                query = query.filter(
-                    (Device.name.ilike(f'%{search_term}%')) |
-                    (Device.mac.ilike(f'%{search_term}%'))
-                )
-            
-            devices = query.all()
-            devices_list = [{
-                'mac': device.mac,
-                'name': device.name,
-                'location': {
-                    'latitude': device.latitude,
-                    'longitude': device.longitude
-                },
-                'status': device.status,
-                'created_at': device.created_at.isoformat() if device.created_at else None,
-                'updated_at': device.updated_at.isoformat() if device.updated_at else None
-            } for device in devices]
-            
-            if not search_term:
-                redis_client.setex('devices_list', 300, json.dumps(devices_list))
-            
-            return devices_list
-            
-        except Exception as e:
-            print(f"Error getting devices: {e}")
-            return []
+        query = Device.query
+        if search_term:
+            query = query.filter(Device.name.ilike(f'%{search_term}%'))
+        return query.all()
 
     @staticmethod
     def add_device(device_data):
-        try:
-            from ..models.device import Device
-            
-            # Check if device already exists
-            existing_device = Device.query.filter_by(mac=device_data['mac']).first()
-            if existing_device:
-                raise Exception('Device with this MAC address already exists')
-            
-            device = Device(
-                mac=device_data['mac'],
-                name=device_data['name'],
-                latitude=device_data['location']['latitude'],
-                longitude=device_data['location']['longitude'],
-                status='active'
-            )
-            
-            db.session.add(device)
-            db.session.commit()
-            redis_client.delete('devices_list')
-            return device
-            
-        except Exception as e:
-            db.session.rollback()
-            raise e
+        device = Device(
+            mac=device_data['mac'],
+            name=device_data['name'],
+            location=device_data['location']
+        )
+        db.session.add(device)
+        db.session.commit()
+        return device
 
     @staticmethod
     def update_device(mac, device_data):
         try:
-            from ..models.device import Device
             device = Device.query.filter_by(mac=mac).first()
             
             if device:
@@ -162,7 +114,6 @@ class DeviceDAL:
     @staticmethod
     def delete_device(mac):
         try:
-            from ..models.device import Device
             device = Device.query.filter_by(mac=mac).first()
             if device:
                 db.session.delete(device)

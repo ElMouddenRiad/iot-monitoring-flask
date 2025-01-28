@@ -7,8 +7,8 @@ import {
     IconButton,
     TextField,
     Button
-} from '@material-ui/core';
-import { Edit, Delete, Visibility } from '@material-ui/icons';
+} from '@mui/material';
+import { Edit, Delete, Visibility } from '@mui/icons-material';
 import './DeviceList.css';
 
 function DeviceList({ devices, selectedDevice, onDeviceSelect, onAddDevice, onEditDevice }) {

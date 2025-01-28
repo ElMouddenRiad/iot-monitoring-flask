@@ -3,9 +3,11 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_jwt_extended import JWTManager, jwt_required
 from flask import Blueprint, jsonify, request
 from .dal.dal import DeviceDAL
+from .models import Device  # Import Device from models
 import pika
 import json
 from datetime import datetime
+from extensions import db  # Move db to extensions.py
 
 device_bp = Blueprint('device', __name__)
 RABBITMQ_HOST = 'localhost'
@@ -29,9 +31,12 @@ def publish_device_event(event_type, device_data):
 
 @device_bp.route('/api/devices', methods=['GET'])
 def get_devices():
-    search_term = request.args.get('search')
-    devices = DeviceDAL.get_devices(search_term)
-    return jsonify(devices)
+    try:
+        devices = Device.query.all()
+        return jsonify([device.to_dict() for device in devices])
+    except Exception as e:
+        print(f"Error getting devices: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @device_bp.route('/api/devices', methods=['POST'])
 def add_device():

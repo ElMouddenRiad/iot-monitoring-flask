@@ -8,8 +8,6 @@ import json
 
 MQTT_BROKER = "broker.hivemq.com"
 MQTT_CLIENT_ID = "iot-device"
-MQTT_USERNAME = "bakr"
-MQTT_PASSWORD = "bakr" 
 MQTT_BROKER_PORT = 1883
 MQTT_TOPIC = "iot/temp"
 
@@ -103,7 +101,6 @@ def on_publish(client, userdata, mid):
 
 def run_device(device_info, weather_fetcher):
     client = mqtt.Client(client_id=f"{MQTT_CLIENT_ID}-{device_info['mac']}")
-    client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
     client.on_connect = on_connect
     client.on_message = on_message
     client.on_publish = on_publish

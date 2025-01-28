@@ -1,9 +1,10 @@
 from flask import Flask, request, jsonify, Blueprint
-from flask_sqlalchemy import SQLAlchemy
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required
 import redis
 import bcrypt
 from datetime import timedelta
+import os
+from extensions import db  # Import db from extensions
 
 auth_bp = Blueprint('auth', __name__)
 # Config
@@ -12,9 +13,19 @@ auth_bp = Blueprint('auth', __name__)
 # auth_bp.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=1)
 
 # Initialize extensions
-db = SQLAlchemy()
 jwt = JWTManager()
-redis_client = redis.Redis(host='localhost', port=6379, db=0)
+try:
+    redis_client = redis.Redis(
+        host=os.getenv('REDIS_HOST', 'localhost'),
+        port=int(os.getenv('REDIS_PORT', 6379)),
+        db=0,
+        socket_timeout=5,
+        decode_responses=True
+    )
+    redis_client.ping()  # Test connection
+except redis.ConnectionError:
+    print("Warning: Redis connection failed. Some features may be limited.")
+    redis_client = None
 
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)

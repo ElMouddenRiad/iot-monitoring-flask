@@ -1,5 +1,5 @@
-import React from 'react';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import React, { useEffect, useRef } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import './DeviceMap.css';
@@ -12,29 +12,83 @@ L.Icon.Default.mergeOptions({
     shadowUrl: require('leaflet/dist/images/marker-shadow.png'),
 });
 
-function DeviceMap({ devices }) {
-    const center = [0, 0];
+// Component to update map bounds
+function MapBounds({ devices }) {
+    const map = useMap();
     
+    useEffect(() => {
+        if (Object.keys(devices).length > 0) {
+            const bounds = L.latLngBounds(
+                Object.values(devices).map(device => [
+                    device.location.latitude,
+                    device.location.longitude
+                ])
+            );
+            map.fitBounds(bounds, { padding: [50, 50] });
+        }
+    }, [devices, map]);
+
+    return null;
+}
+
+function DeviceMap({ devices, selectedDevice, onLocationSelect }) {
+    const mapRef = useRef(null);
+    const defaultCenter = [0, 0];
+    const defaultZoom = 2;
+
+    // Handle map click for adding new device location
+    const handleMapClick = (e) => {
+        if (onLocationSelect) {
+            onLocationSelect({
+                latitude: e.latlng.lat,
+                longitude: e.latlng.lng
+            });
+        }
+    };
+
     return (
-        <MapContainer center={center} zoom={2} style={{ height: '400px', width: '100%' }}>
+        <MapContainer 
+            center={defaultCenter} 
+            zoom={defaultZoom} 
+            style={{ height: '400px', width: '100%' }}
+            ref={mapRef}
+            onClick={handleMapClick}
+        >
             <TileLayer
                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             />
+            
             {Object.entries(devices).map(([mac, device]) => (
                 <Marker
                     key={mac}
                     position={[device.location.latitude, device.location.longitude]}
+                    eventHandlers={{
+                        click: () => {
+                            if (mapRef.current) {
+                                mapRef.current.setView(
+                                    [device.location.latitude, device.location.longitude],
+                                    13
+                                );
+                            }
+                        }
+                    }}
                 >
                     <Popup>
-                        <div>
+                        <div className="device-popup">
                             <h3>{device.name}</h3>
                             <p>MAC: {mac}</p>
                             <p>Status: {device.status}</p>
+                            {device.temperature && (
+                                <p>Temperature: {device.temperature}°C</p>
+                            )}
+                            <p>Location: {device.location.latitude.toFixed(6)}, {device.location.longitude.toFixed(6)}</p>
                         </div>
                     </Popup>
                 </Marker>
             ))}
+            
+            <MapBounds devices={devices} />
         </MapContainer>
     );
 }
