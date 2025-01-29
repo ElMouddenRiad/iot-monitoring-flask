@@ -13,6 +13,8 @@ import paho.mqtt.client as paho_mqtt
 from bson import ObjectId
 from flask.json.provider import JSONProvider
 from flask_cors import CORS
+import eventlet  # Add this import
+eventlet.monkey_patch()  # Add this line before creating Flask app
 
 app = Flask(__name__)
 CORS(app, resources={
@@ -36,26 +38,29 @@ class CustomJSONProvider(JSONProvider):
 
 app.json_provider_class = CustomJSONProvider
 
-# Configuration
-app.config.update(
-    MQTT_BROKER_URL='broker.hivemq.com',
-    MQTT_BROKER_PORT=1883,
-    # MQTT_USERNAME='bakr',
-    # MQTT_PASSWORD='bakr',
-    MQTT_REFRESH_TIME=1.0,
-    SECRET_KEY=os.urandom(24),
-    MAX_STORED_MESSAGES=1000,
-    API_KEY_REQUIRED=os.getenv('API_KEY_REQUIRED', 'False').lower() == 'true',
-    API_KEY=os.getenv('API_SECRET_KEY', 'your-secret-key'),
-    RABBITMQ_HOST='localhost',
-    RABBITMQ_QUEUE='device_events',
-    SQLALCHEMY_DATABASE_URI="postgresql://admin:admin123@localhost:5432/iot_platform",
-    SQLALCHEMY_TRACK_MODIFICATIONS=False,
-    MQTT_TOPIC='iot/temp',
-    MQTT_CLIENT_ID='server-subscriber',
-    JWT_SECRET_KEY='your-secret-key',
-    JWT_ACCESS_TOKEN_EXPIRES=timedelta(hours=1)
-)
+def configure_app(app):
+    # Configuration
+    app.config.update(
+        MQTT_BROKER_URL='test.mosquitto.org',
+        MQTT_BROKER_PORT=1883,
+        MQTT_REFRESH_TIME=1.0,
+        SECRET_KEY=os.urandom(24),
+        MAX_STORED_MESSAGES=1000,
+        API_KEY_REQUIRED=os.getenv('API_KEY_REQUIRED', 'False').lower() == 'true',
+        API_KEY=os.getenv('API_SECRET_KEY', 'your-secret-key'),
+        RABBITMQ_HOST='localhost',
+        RABBITMQ_QUEUE='device_events',
+        SQLALCHEMY_DATABASE_URI="postgresql://admin:admin123@localhost:5432/iot_platform",
+        SQLALCHEMY_TRACK_MODIFICATIONS=False,
+        MQTT_TOPIC='iot/temp',
+        MQTT_CLIENT_ID='server-subscriber',
+        JWT_SECRET_KEY='your-secret-key',
+        JWT_ACCESS_TOKEN_EXPIRES=timedelta(hours=1)
+    )
+
+    # Start MQTT client
+    from mqtt_client import start_mqtt_client
+    start_mqtt_client(app)
 
 # Initialize extensions
 db.init_app(app)
@@ -102,31 +107,6 @@ def on_disconnect(client, userdata, rc):
         print("Unexpected disconnection. Attempting to reconnect...")
         client.reconnect()
 
-def start_mqtt_client():
-    try:
-        client = paho_mqtt.Client(client_id=app.config['MQTT_CLIENT_ID'], clean_session=True)
-        # client.username_pw_set(app.config['MQTT_USERNAME'], app.config['MQTT_PASSWORD'])
-        
-        # Set callbacks
-        client.on_connect = on_connect
-        client.on_message = on_message
-        client.on_disconnect = on_disconnect
-        
-        # Set will message
-        client.will_set(app.config['MQTT_TOPIC'], payload="Offline", qos=1, retain=True)
-        
-        # Enable automatic reconnection
-        client.reconnect_delay_set(min_delay=1, max_delay=30)
-        
-        # Connect with shorter keepalive
-        client.connect(app.config['MQTT_BROKER_URL'], app.config['MQTT_BROKER_PORT'], keepalive=30)
-        
-        # Use loop_start instead of loop_forever for better reconnection handling
-        client.loop_start()
-        
-    except Exception as e:
-        print(f"Error connecting to MQTT broker: {e}")
-
 @app.route('/health')
 def health_check():
     return {'status': 'healthy'}, 200
@@ -135,11 +115,6 @@ def create_app():
     with app.app_context():
         db.create_all()  # This will create all tables
         
-    # Start MQTT client in a separate thread
-    mqtt_thread = threading.Thread(target=start_mqtt_client)
-    mqtt_thread.daemon = True
-    mqtt_thread.start()
-    
     return app
 
 if __name__ == '__main__':
@@ -147,9 +122,9 @@ if __name__ == '__main__':
         app = create_app()
         socketio.run(app, 
             host='0.0.0.0', 
-            port=5000, 
+            port=5000,
             debug=True,
-            allow_unsafe_werkzeug=True
+            use_reloader=False  # Add this line
         )
     except Exception as e:
         print(f"Error: {e}")

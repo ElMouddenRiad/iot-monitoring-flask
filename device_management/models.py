@@ -1,0 +1,46 @@
+from extensions import db
+
+class Device(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(80), nullable=False)
+    mac = db.Column(db.String(120), unique=True, nullable=False)
+    location = db.Column(db.String(120))
+    status = db.Column(db.String(20), default='inactive')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'mac': self.mac,
+            'location': self.location,
+            'status': self.status
+        }
+
+def init_test_devices(app):
+    with app.app_context():
+        # Check if we already have devices
+        if Device.query.count() == 0:
+            test_devices = [
+                Device(
+                    name='San Francisco Sensor',
+                    mac='00:00:00:00:00:01',
+                    location='{\"latitude\": 37.7749, \"longitude\": -122.4194}',
+                    status='active'
+                ),
+                Device(
+                    name='New York Sensor',
+                    mac='00:00:00:00:00:02',
+                    location='{\"latitude\": 40.7128, \"longitude\": -74.0060}',
+                    status='active'
+                )
+            ]
+            
+            for device in test_devices:
+                db.session.add(device)
+            
+            try:
+                db.session.commit()
+                print("Test devices initialized successfully")
+            except Exception as e:
+                db.session.rollback()
+                print(f"Error initializing test devices: {e}") 

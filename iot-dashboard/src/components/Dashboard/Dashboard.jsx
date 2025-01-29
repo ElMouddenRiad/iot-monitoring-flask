@@ -5,17 +5,23 @@ import TemperatureChart from '../TemperatureChart/TemperatureChart';
 import DeviceMap from '../DeviceMap/DeviceMap';
 import Statistics from '../Statistics/Statistics';
 import DeviceModal from '../DeviceModal/DeviceModal';
-import { deviceService, statsService } from '../../services/api';
+import { deviceService } from '../../services/api';
 import { io } from 'socket.io-client';
 import './Dashboard.css';
 
 const socket = io('http://localhost:5000', {
     transports: ['websocket', 'polling'],
     reconnection: true,
-    reconnectionAttempts: 5,
+    reconnectionAttempts: 10,
     reconnectionDelay: 1000,
-    timeout: 10000
+    reconnectionDelayMax: 5000,
+    timeout: 20000,
+    autoConnect: true,
+    forceNew: true,
+    withCredentials: false
 });
+
+const API_BASE_URL = 'http://localhost:5000';
 
 function Dashboard() {
     const [devices, setDevices] = useState({});
@@ -25,69 +31,121 @@ function Dashboard() {
     const [temperatureData, setTemperatureData] = useState([]);
     const [stats, setStats] = useState(null);
 
+    const fetchStats = async () => {
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/stats`);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            const statsData = await response.json();
+            console.log('Fetched stats:', statsData);
+            setStats(statsData);
+        } catch (error) {
+            console.error('Error fetching stats:', error);
+            setStats(null);
+        }
+    };
+
     const updateData = useCallback(async (data) => {
-        if (!selectedDevice || selectedDevice === data.device_id) {
-            setTemperatureData(prev => [...prev, data].slice(-50));
-            await updateStats();
+        console.log('Received new data:', data);
+        try {
+            if (!selectedDevice || selectedDevice === data.device_id) {
+                setTemperatureData(prev => {
+                    const newData = [...prev, {
+                        timestamp: new Date(data.timestamp),
+                        temperature: parseFloat(data.temperature),
+                        device_id: data.device_id
+                    }];
+                    console.log('Updated temperature data:', newData);
+                    return newData.slice(-50);
+                });
+                
+                await fetchStats();  // Update stats after new data
+            }
+        } catch (error) {
+            console.error('Error in updateData:', error);
         }
     }, [selectedDevice]);
 
     useEffect(() => {
         const initializeSocketConnection = () => {
+            console.log('Initializing socket connection...');
+            
             socket.on('connect', () => {
                 console.log('Connected to WebSocket');
             });
-    
-            socket.on('new_reading', (data) => {
-                console.log('New reading received:', data);
-                updateData(data);
-            });
-    
+
             socket.on('connect_error', (error) => {
                 console.error('Socket connection error:', error);
             });
+
+            socket.on('new_reading', (data) => {
+                console.log('New reading received from socket:', data);
+                updateData(data);
+            });
+
+            socket.on('connection_response', (data) => {
+                console.log('Socket connection response:', data);
+            });
+
+            socket.on('disconnect', () => {
+                console.log('Disconnected from WebSocket');
+            });
         };
-    
+
         initializeSocketConnection();
-    
+        
+        // Initial stats load
+        fetchStats();
+
         return () => {
+            socket.off('connect');
+            socket.off('connect_error');
+            socket.off('new_reading');
+            socket.off('connection_response');
+            socket.off('disconnect');
             socket.disconnect();
         };
     }, [updateData]);
 
-    // useEffect(() => {
-    //     loadDevices();
-    //     initializeSocketConnection();
-        
-    //     return () => {
-    //         socket.disconnect();
-    //     };
-    // }, [initializeSocketConnection]);
-
-    
-
     const loadDevices = async () => {
         try {
-            const response = await fetch('http://localhost:5000/api/devices');
+            const response = await fetch(`${API_BASE_URL}/api/devices`);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
             const devicesData = await response.json();
+            console.log('Loaded devices:', devicesData);
             setDevices(devicesData);
         } catch (error) {
             console.error('Error loading devices:', error);
+            setDevices({});
         }
     };
     
     useEffect(() => {
+        const loadInitialData = async () => {
+            try {
+                // Load initial temperature readings
+                const response = await fetch(`${API_BASE_URL}/api/readings/recent`);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const readings = await response.json();
+                console.log('Initial readings:', readings);
+                setTemperatureData(readings.map(reading => ({
+                    timestamp: new Date(reading.timestamp),
+                    temperature: parseFloat(reading.temperature),
+                    device_id: reading.device_id
+                })));
+            } catch (error) {
+                console.error('Error loading initial data:', error);
+            }
+        };
+
+        loadInitialData();
         loadDevices();
     }, []);
-
-    const updateStats = async () => {
-        try {
-            const statsData = await statsService.getStats();
-            setStats(statsData);
-        } catch (error) {
-            console.error('Error updating stats:', error);
-        }
-    };
 
     const handleDeviceSelect = (deviceId) => {
         setSelectedDevice(deviceId);
@@ -119,7 +177,7 @@ function Dashboard() {
 
     return (
         <div className="dashboard">
-            <Typography variant="h4" gutterBottom>
+            <Typography variant="h4" gutterBottom className="dashboard-title">
                 IoT Temperature Dashboard
             </Typography>
             

@@ -5,48 +5,62 @@ from concurrent.futures import ThreadPoolExecutor
 import requests
 from datetime import datetime, timedelta
 import json
+import logging  # Add logging
 
-MQTT_BROKER = "broker.hivemq.com"
-MQTT_CLIENT_ID = "iot-device"
-MQTT_BROKER_PORT = 1883
-MQTT_TOPIC = "iot/temp"
+# Add configuration
+CONFIG = {
+    'MQTT_BROKER': "test.mosquitto.org",
+    'MQTT_PORT': 1883,
+    'MQTT_TOPIC': "iot/temp",
+    'MQTT_QOS': 1,
+    'RECONNECT_DELAY': 5,
+    'MAX_RETRIES': 3
+}
+
+# Add proper logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 
 class WeatherDataFetcher:
     def __init__(self):
-        self.base_url = "https://archive-api.open-meteo.com/v1/archive"
+        self.base_url = "https://api.open-meteo.com/v1/forecast"  # Changed to forecast API
         self.cache = {}
+        self.cache_duration = timedelta(hours=1)
+        self.last_update = {}
         
     def get_historical_data(self, latitude, longitude, start_date, end_date):
         cache_key = f"{latitude},{longitude},{start_date},{end_date}"
         
-        if cache_key in self.cache:
+        if (cache_key in self.cache and 
+            cache_key in self.last_update and 
+            datetime.now() - self.last_update[cache_key] < self.cache_duration):
             return self.cache[cache_key]
         
-        params = {
-            'latitude': latitude,
-            'longitude': longitude,
-            'start_date': start_date,
-            'end_date': end_date,
-            'hourly': 'temperature_2m',
-            'timezone': 'auto'
-        }
-        
         try:
-            response = requests.get(self.base_url, params=params)
+            response = requests.get(self.base_url, params={
+                'latitude': latitude,
+                'longitude': longitude,
+                'hourly': 'temperature_2m',
+                'timezone': 'auto',
+                'past_days': 1,  # Get past day data
+                'forecast_days': 1  # Get forecast for next day
+            }, timeout=10)
+            
             response.raise_for_status()
             data = response.json()
             
-            temperatures = data['hourly']['temperature_2m']
-            timestamps = data['hourly']['time']
-            
-            processed_data = list(zip(timestamps, temperatures))
+            processed_data = list(zip(data['hourly']['time'], data['hourly']['temperature_2m']))
             self.cache[cache_key] = processed_data
+            self.last_update[cache_key] = datetime.now()
+            
             return processed_data
             
-        except Exception as e:
-            print(f"Error fetching weather data: {e}")
-            return None
-
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Error fetching weather data: {e}")
+            return self.cache.get(cache_key)
+        
 def simulate_temperature(device_info, weather_fetcher):
     """
     Simulate temperature using historical data and random fluctuations
@@ -84,8 +98,8 @@ def simulate_temperature(device_info, weather_fetcher):
 
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
-        print(f"Successfully connected to MQTT broker with client ID: {MQTT_CLIENT_ID}")
-        client.subscribe(MQTT_TOPIC)
+        print(f"Successfully connected to MQTT broker with client ID: {CONFIG['MQTT_TOPIC']}")
+        client.subscribe(CONFIG['MQTT_TOPIC'])
     else:
         print(f"Failed to connect with result code: {rc}")
 
@@ -100,15 +114,33 @@ def on_publish(client, userdata, mid):
     print(f"Message {mid} published successfully")
 
 def run_device(device_info, weather_fetcher):
-    client = mqtt.Client(client_id=f"{MQTT_CLIENT_ID}-{device_info['mac']}")
-    client.on_connect = on_connect
-    client.on_message = on_message
-    client.on_publish = on_publish
+    client = mqtt.Client(client_id=f"{CONFIG['MQTT_TOPIC']}-{device_info['mac']}")
+    
+    def on_disconnect(client, userdata, rc):
+        if rc != 0:
+            logging.warning(f"Unexpected disconnection. Attempting to reconnect...")
+            time.sleep(CONFIG['RECONNECT_DELAY'])
+            client.reconnect()
+
+    client.on_connect = lambda c,u,f,rc: logging.info(f"Connected with result code {rc}")
+    client.on_disconnect = on_disconnect
+    client.on_publish = lambda c,u,m: logging.debug(f"Message {m} published")
+
+    retries = 0
+    while retries < CONFIG['MAX_RETRIES']:
+        try:
+            client.connect(CONFIG['MQTT_BROKER'], CONFIG['MQTT_PORT'], 60)
+            client.loop_start()
+            break
+        except Exception as e:
+            retries += 1
+            logging.error(f"Connection attempt {retries} failed: {e}")
+            if retries == CONFIG['MAX_RETRIES']:
+                logging.error("Max retries reached. Exiting.")
+                return
+            time.sleep(CONFIG['RECONNECT_DELAY'])
 
     try:
-        client.connect(MQTT_BROKER, MQTT_BROKER_PORT, 60)
-        client.loop_start()
-
         while True:
             temperature = simulate_temperature(device_info, weather_fetcher)
             payload = {
@@ -118,15 +150,52 @@ def run_device(device_info, weather_fetcher):
                 'timestamp': datetime.now().isoformat()
             }
             
-            client.publish(device_info['topic'], json.dumps(payload))
+            result = client.publish(
+                device_info['topic'], 
+                json.dumps(payload), 
+                qos=CONFIG['MQTT_QOS']
+            )
+            
+            if result.rc == 0:
+                logging.info(f"Message published successfully: {payload['device_id']}")
+            else:
+                logging.error(f"Failed to publish message. RC: {result.rc}")
+            
             time.sleep(device_info['frequency'])
 
-    except (KeyboardInterrupt, Exception) as e:
-        print(f"Error in device {device_info['mac']}: {e}")
+    except KeyboardInterrupt:
+        logging.info(f"Shutting down device {device_info['mac']}")
+    except Exception as e:
+        logging.error(f"Error in device {device_info['mac']}: {e}")
     finally:
         client.loop_stop()
         client.disconnect()
-        return
+
+def send_temperature(device, temperature, weather_fetcher):
+    try:
+        timestamp = datetime.now().isoformat()
+        data = {
+            'device_id': device['mac'],
+            'temperature': temperature,
+            'timestamp': timestamp,
+            'location': device['location']
+        }
+        
+        print(f"Sending temperature data: {data}")
+        
+        response = requests.post(
+            'http://localhost:5000/api/temperature',
+            json=data,
+            headers={'Content-Type': 'application/json'}
+        )
+        
+        if response.status_code == 200:
+            print(f"Temperature data sent successfully for device {device['mac']}")
+        else:
+            print(f"Failed to send temperature data: {response.status_code}")
+            
+    except Exception as e:
+        print(f"Error sending temperature: {e}")
 
 if __name__ == "__main__":
     weather_fetcher = WeatherDataFetcher()

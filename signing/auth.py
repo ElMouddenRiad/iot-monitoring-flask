@@ -5,27 +5,31 @@ import bcrypt
 from datetime import timedelta
 import os
 from extensions import db  # Import db from extensions
-
+from redis import Redis
+from urllib.parse import urlparse
 auth_bp = Blueprint('auth', __name__)
-# Config
-# auth_bp.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://bakr:bakr1234@localhost:5432/iot_platform'
-# auth_bp.config['JWT_SECRET_KEY'] = 'secret'
-# auth_bp.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=1)
 
 # Initialize extensions
 jwt = JWTManager()
-try:
-    redis_client = redis.Redis(
-        host=os.getenv('REDIS_HOST', 'localhost'),
-        port=int(os.getenv('REDIS_PORT', 6379)),
-        db=0,
-        socket_timeout=5,
-        decode_responses=True
-    )
-    redis_client.ping()  # Test connection
-except redis.ConnectionError:
-    print("Warning: Redis connection failed. Some features may be limited.")
-    redis_client = None
+
+def init_redis(app):
+    try:
+        redis_url = urlparse(app.config['REDIS_URL'])
+        redis_client = Redis(
+            host=redis_url.hostname or 'localhost',
+            port=redis_url.port or 6379,
+            db=0,
+            socket_timeout=5,
+            decode_responses=True
+        )
+        redis_client.ping()  # Test connection
+        return redis_client
+    except Exception as e:
+        print(f"Warning: Redis connection failed ({str(e)}). Some features may be limited.")
+        return None
+
+# Initialize Redis after app creation
+redis_client = None
 
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)

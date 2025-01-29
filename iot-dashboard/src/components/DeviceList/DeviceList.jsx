@@ -58,7 +58,7 @@ function DeviceList({ devices, selectedDevice, onDeviceSelect, onAddDevice, onEd
                     <ListItem 
                         key={mac}
                         selected={selectedDevice === mac}
-                        button
+                        onClick={() => onDeviceSelect(mac)}
                     >
                         <ListItemText
                             primary={device.name}

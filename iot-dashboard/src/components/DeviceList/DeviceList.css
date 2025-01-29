@@ -1,0 +1,48 @@
+.device-list {
+    padding: 20px;
+    font-family: 'Poppins', sans-serif;
+}
+
+.device-list h2 {
+    margin-bottom: 20px;
+}
+
+.device-list table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.device-list th, .device-list td {
+    padding: 10px;
+    text-align: left;
+}
+
+.device-list th {
+    background-color: #f2f2f2;
+}
+
+.device-list tr:nth-child(even) {
+    background-color: #f9f9f9;
+}
+
+.device-list tr:hover {
+    background-color: #e9e9e9;
+}
+
+.device-list td:last-child {
+    text-align: center;
+}
+
+.device-list button {
+    margin-right: 5px;
+}
+
+.device-list input[type="text"] {
+    width: 100%;
+    padding: 10px;
+    box-sizing: border-box;
+}
+
+.device-list .MuiButtonBase-root {
+    margin-right: 5px;
+}

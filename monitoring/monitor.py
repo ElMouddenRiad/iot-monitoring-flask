@@ -4,6 +4,7 @@ import pika
 import json
 import threading
 from extensions import socketio  # Import from extensions instead
+from datetime import datetime
 
 # MongoDB Configuration
 mongo_client = MongoClient('mongodb+srv://bakr:bakr1234@iotproject.dl598.mongodb.net/?retryWrites=true&w=majority&appName=IotProject')
@@ -27,11 +28,33 @@ def start_rabbitmq_consumer():
 
 @socketio.on('connect')
 def handle_connect():
-    print('Client connected')
+    print('Client connected to Socket.IO')
+    socketio.emit('connection_response', {'status': 'connected'})
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    print('Client disconnected from Socket.IO')
 
 def store_temperature_reading(data):
-    result = readings_collection.insert_one(data)
-    emit_data = data.copy()
-    emit_data['_id'] = str(result.inserted_id)
-    socketio.emit('new_temperature', emit_data)
+    try:
+        # Format the data
+        formatted_data = {
+            'device_id': data['device_id'],
+            'temperature': data['temperature'],
+            'timestamp': data['timestamp'],
+            'location': data['location']
+        }
+        
+        # Store in MongoDB
+        readings_collection.insert_one(formatted_data)
+        
+        # Emit the data to all connected clients
+        print(f"Emitting temperature reading: {formatted_data}")
+        socketio.emit('new_reading', formatted_data)  # Removed broadcast parameter
+        
+        return True
+    except Exception as e:
+        print(f"Error in store_temperature_reading: {e}")
+        print(f"Received data: {data}")
+        return False
 
