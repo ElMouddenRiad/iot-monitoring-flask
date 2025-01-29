@@ -1,12 +1,14 @@
 @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;700&display=swap');
 .dashboard {
     padding: 20px;
-    font-family: 'Poppins', sans-serif;
+    font-family: 'Poppins';
+    background-color: #1a1a1a;
 }
 
 .paper {
     padding: 20px;
     height: 100%;
+    /* background-color: #2d2d2d; */
 }
 
 .device-list-header {
@@ -19,21 +21,21 @@
     white-space: nowrap;
 }
 .dashboard-title {
+    font-family: 'Poppins';
     text-align: center;
-    color: #333;
-    font-weight: bolder;
+    color: #e0e0e0;
+    font-weight: 700;
     font-size: 24px;
     margin-bottom: 20px;
     text-transform: uppercase;
     letter-spacing: 2px;
-    font-family: 'Poppins', sans-serif;
     text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
 }
 /*************************/
 body { 
     font-family: 'Poppins', sans-serif; 
     margin: 20px; 
-    background-color: gainsboro; 
+    /* background-color: gainsboro;  */
 }
 
 .container { 
@@ -42,7 +44,7 @@ body {
 }
 
 .card { 
-    background: #f0f0f0;
+    /* background: #f0f0f0; */
     border-radius: 8px;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     padding: 20px;
@@ -61,7 +63,7 @@ body {
 }
 
 .device-list {
-    max-height: 300px;
+    /* max-height: 300px; */
     overflow-y: auto;
 }
 

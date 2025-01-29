@@ -18,13 +18,19 @@ function MapBounds({ devices }) {
     
     useEffect(() => {
         if (Object.keys(devices).length > 0) {
-            const bounds = L.latLngBounds(
-                Object.values(devices).map(device => [
-                    device.location.latitude,
-                    device.location.longitude
-                ])
+            const devicesWithLocation = Object.values(devices).filter(
+                device => device.latitude && device.longitude
             );
-            map.fitBounds(bounds, { padding: [50, 50] });
+            
+            if (devicesWithLocation.length > 0) {
+                const bounds = L.latLngBounds(
+                    devicesWithLocation.map(device => [
+                        device.latitude,
+                        device.longitude
+                    ])
+                );
+                map.fitBounds(bounds, { padding: [50, 50] });
+            }
         }
     }, [devices, map]);
 
@@ -60,32 +66,35 @@ function DeviceMap({ devices, selectedDevice, onLocationSelect }) {
             />
             
             {Object.entries(devices).map(([mac, device]) => (
-                <Marker
-                    key={mac}
-                    position={[device.location.latitude, device.location.longitude]}
-                    eventHandlers={{
-                        click: () => {
-                            if (mapRef.current) {
-                                mapRef.current.setView(
-                                    [device.location.latitude, device.location.longitude],
-                                    13
-                                );
+                device.latitude && device.longitude ? (
+                    <Marker
+                        key={mac}
+                        position={[device.latitude, device.longitude]}
+                        eventHandlers={{
+                            click: () => {
+                                if (mapRef.current) {
+                                    mapRef.current.setView(
+                                        [device.latitude, device.longitude],
+                                        13
+                                    );
+                                }
                             }
-                        }
-                    }}
-                >
-                    <Popup>
-                        <div className="device-popup">
-                            <h3>{device.name}</h3>
-                            <p>MAC: {mac}</p>
-                            <p>Status: {device.status}</p>
-                            {device.temperature && (
-                                <p>Temperature: {device.temperature}°C</p>
-                            )}
-                            <p>Location: {device.location.latitude.toFixed(6)}, {device.location.longitude.toFixed(6)}</p>
-                        </div>
-                    </Popup>
-                </Marker>
+                        }}
+                    >
+                        <Popup>
+                            <div className="device-popup">
+                                <h3>{device.name}</h3>
+                                <p>MAC: {mac}</p>
+                                <p>Status: {device.status}</p>
+                                {device.temperature && (
+                                    <p>Temperature: {device.temperature}°C</p>
+                                )}
+                                <p>Location: {device.latitude.toFixed(6)}, {device.longitude.toFixed(6)}</p>
+                                {device.location && <p>Address: {device.location}</p>}
+                            </div>
+                        </Popup>
+                    </Marker>
+                ) : null
             ))}
             
             <MapBounds devices={devices} />

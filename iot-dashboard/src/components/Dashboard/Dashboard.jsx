@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import './Dashboard.css';
 import { Grid, Paper, Typography } from '@mui/material';
 import DeviceList from '../DeviceList/DeviceList';
 import TemperatureChart from '../TemperatureChart/TemperatureChart';
@@ -7,11 +8,13 @@ import Statistics from '../Statistics/Statistics';
 import DeviceModal from '../DeviceModal/DeviceModal';
 import { deviceService } from '../../services/api';
 import { io } from 'socket.io-client';
-import './Dashboard.css';
 
 const socket = io('http://localhost:5000', {
     transports: ['websocket', 'polling'],
     reconnection: true,
+    cors: {
+        origin: "http://localhost:3000"
+    },    
     reconnectionAttempts: 10,
     reconnectionDelay: 1000,
     reconnectionDelayMax: 5000,
@@ -68,45 +71,56 @@ function Dashboard() {
     }, [selectedDevice]);
 
     useEffect(() => {
-        const initializeSocketConnection = () => {
-            console.log('Initializing socket connection...');
-            
-            socket.on('connect', () => {
-                console.log('Connected to WebSocket');
-            });
+        // Load initial data
+        loadInitialData();
 
-            socket.on('connect_error', (error) => {
-                console.error('Socket connection error:', error);
-            });
+        // Set up Socket.IO listeners
+        socket.on('connect', () => {
+            console.log('Connected to WebSocket server');
+        });
 
-            socket.on('new_reading', (data) => {
-                console.log('New reading received from socket:', data);
-                updateData(data);
+        socket.on('new_reading', (reading) => {
+            console.log('New temperature reading received:', reading);
+            setTemperatureData(prevData => {
+                const newData = [...prevData, reading];
+                // Keep only last 50 readings
+                return newData.slice(-50);
             });
+            updateData(reading); 
+        });
 
-            socket.on('connection_response', (data) => {
-                console.log('Socket connection response:', data);
-            });
+        socket.on('stats_updated', (newStats) => {
+            console.log('Stats updated:', newStats);
+            setStats(newStats);
+        });
 
-            socket.on('disconnect', () => {
-                console.log('Disconnected from WebSocket');
-            });
-        };
-
-        initializeSocketConnection();
-        
-        // Initial stats load
-        fetchStats();
+        socket.on('connect_error', (error) => {
+            console.error('Socket connection error:', error);
+        });
 
         return () => {
-            socket.off('connect');
-            socket.off('connect_error');
             socket.off('new_reading');
-            socket.off('connection_response');
-            socket.off('disconnect');
+            socket.off('stats_updated');
+            socket.off('connect_error');
             socket.disconnect();
         };
-    }, [updateData]);
+    }, [updateData]); // Add updateData to dependency array
+
+    const loadInitialData = async () => {
+        try {
+            // Load recent temperature readings
+            const readings = await deviceService.getRecentReadings();
+            console.log('Initial readings:', readings);
+            setTemperatureData(readings);
+
+            // Load initial statistics
+            const statsData = await deviceService.getStats();
+            console.log('Initial stats:', statsData);
+            setStats(statsData);
+        } catch (error) {
+            console.error('Error loading initial data:', error);
+        }
+    };
 
     const loadDevices = async () => {
         try {
@@ -124,26 +138,6 @@ function Dashboard() {
     };
     
     useEffect(() => {
-        const loadInitialData = async () => {
-            try {
-                // Load initial temperature readings
-                const response = await fetch(`${API_BASE_URL}/api/readings/recent`);
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                const readings = await response.json();
-                console.log('Initial readings:', readings);
-                setTemperatureData(readings.map(reading => ({
-                    timestamp: new Date(reading.timestamp),
-                    temperature: parseFloat(reading.temperature),
-                    device_id: reading.device_id
-                })));
-            } catch (error) {
-                console.error('Error loading initial data:', error);
-            }
-        };
-
-        loadInitialData();
         loadDevices();
     }, []);
 
@@ -177,14 +171,18 @@ function Dashboard() {
 
     return (
         <div className="dashboard">
-            <Typography variant="h4" gutterBottom className="dashboard-title">
-                IoT Temperature Dashboard
+            <Typography variant="h3" gutterBottom className="dashboard-title" fontFamily="Poppins" fontWeight={700}>
+                IoT Dashboard
             </Typography>
-            
             <Grid container spacing={3}>
+            <Grid item xs={12} md={'100%'}>
+                    <Paper className="paper">
+                        <Statistics stats={stats} />
+                    </Paper>
+            </Grid>
                 <Grid item xs={12} md={4}>
                     <Paper className="paper">
-                        <DeviceList 
+                        <DeviceList
                             devices={devices}
                             selectedDevice={selectedDevice}
                             onDeviceSelect={handleDeviceSelect}
@@ -200,11 +198,7 @@ function Dashboard() {
                     </Paper>
                 </Grid>
                 
-                <Grid item xs={12} md={4}>
-                    <Paper className="paper">
-                        <Statistics stats={stats} />
-                    </Paper>
-                </Grid>
+                
                 
                 <Grid item xs={12} md={8}>
                     <Paper className="paper">

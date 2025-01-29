@@ -9,109 +9,245 @@ import json
 from datetime import datetime
 from extensions import db  # Move db to extensions.py
 from pymongo import MongoClient
+import socketio
+import logging
+from sqlalchemy import create_engine, Column, String, DateTime, Float, Integer
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.declarative import declarative_base
+from .business.device_service import start_device_simulations
+import os
 
-device_bp = Blueprint('device', __name__)
+device_bp = Blueprint('device_bp', __name__)
 RABBITMQ_HOST = 'localhost'
+# MongoDB configuration
 mongo_client = MongoClient('mongodb+srv://bakr:bakr1234@iotproject.dl598.mongodb.net/?retryWrites=true&w=majority&appName=IotProject')
 db = mongo_client['iot_platform']
 readings_collection = db['temperature_readings']
 
+# Database configuration from docker-compose
+DATABASE_URL = 'postgresql://admin:admin123@localhost:5432/iot_platform'
+engine = create_engine(DATABASE_URL, echo=True)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+# Device Model for PostgreSQL
+class Device(Base):
+    __tablename__ = 'devices'
+
+    mac = Column(String(17), primary_key=True)
+    name = Column(String(100), nullable=False)
+    location = Column(String(200))
+    latitude = Column(Float)
+    longitude = Column(Float)
+    status = Column(String(20), default='inactive')
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    frequency = Column(Integer, default=30)  # Add frequency column
+
+    def to_dict(self):
+        return {
+            'mac': self.mac,
+            'name': self.name,
+            'location': self.location,
+            'latitude': self.latitude,
+            'longitude': self.longitude,
+            'status': self.status,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'frequency': self.frequency
+        }
+
+# Drop existing table if it exists and create new one
+# Base.metadata.drop_all(bind=engine)
+Base.metadata.create_all(bind=engine)
+
+# RabbitMQ connection (using docker-compose service name)
+def get_rabbitmq_connection():
+    try:
+        credentials = pika.PlainCredentials('admin', 'admin123')
+        host = 'localhost' if not os.getenv('DOCKER_ENV') else 'rabbitmq'
+        parameters = pika.ConnectionParameters(
+            host=host,
+            port=5672,
+            credentials=credentials
+        )
+        connection = pika.BlockingConnection(parameters)
+        return connection
+    except Exception as e:
+        logging.error(f"Failed to connect to RabbitMQ: {e}")
+        return None
+    
+
 def publish_device_event(event_type, device_data):
-    connection = pika.BlockingConnection(pika.ConnectionParameters(host=RABBITMQ_HOST))
-    channel = connection.channel()
-    channel.queue_declare(queue='device_events')
-    
-    message = {
-        'event_type': event_type,
-        'device_data': device_data
-    }
-    
-    channel.basic_publish(
-        exchange='',
-        routing_key='device_events',
-        body=json.dumps(message)
-    )
-    connection.close()
+    try:
+        connection = get_rabbitmq_connection()
+        if connection:
+            channel = connection.channel()
+            channel.exchange_declare(
+                exchange='device_events',
+                exchange_type='topic',
+                durable=True
+            )
+            
+            message = {
+                'event_type': event_type,
+                'timestamp': datetime.utcnow().isoformat(),
+                'device': device_data
+            }
+            
+            channel.basic_publish(
+                exchange='device_events',
+                routing_key=f'device.{event_type}',
+                body=json.dumps(message),
+                properties=pika.BasicProperties(
+                    delivery_mode=2,  # Make message persistent
+                    content_type='application/json'
+                )
+            )
+            
+            connection.close()
+            logging.info(f"Published {event_type} event for device {device_data.get('mac')}")
+    except Exception as e:
+        logging.error(f"Failed to publish device event: {e}")
+
+def on_message(client, userdata, msg):
+    try:
+        payload = json.loads(msg.payload.decode())
+        print(f"Received `{payload}` from `{msg.topic}` topic")
+
+        # Format the temperature reading
+        reading = {
+            'device_id': payload.get('device_id', 'unknown'),
+            'temperature': payload.get('temperature'),
+            'timestamp': datetime.now().isoformat()
+        }
+
+        # Store in MongoDB
+        readings_collection.insert_one(reading)
+
+        # Emit to connected clients via Socket.IO
+        socketio.emit('new_reading', reading)
+
+        # Update statistics
+        update_stats()
+
+    except Exception as e:
+        print(f"Error processing message: {e}")
 
 @device_bp.route('/api/devices', methods=['GET'])
 def get_devices():
+    db = SessionLocal()
     try:
-        devices = Device.query.all()
-        return jsonify([{
-            'id': device.id,
-            'name': device.name,
-            'mac': device.mac,
-            'location': json.loads(device.location) if device.location else None,
-            'status': device.status
-        } for device in devices])
+        devices = db.query(Device).all()
+        return jsonify([device.to_dict() for device in devices])
     except Exception as e:
-        print(f"Error getting devices: {e}")
+        logging.error(f"Error fetching devices: {e}")
         return jsonify({'error': str(e)}), 500
 
 @device_bp.route('/api/devices', methods=['POST'])
-def add_device():
-    device_data = request.get_json()
-    
-    # Validate required fields
-    required_fields = ['mac', 'name', 'location']
-    if not all(field in device_data for field in required_fields):
-        return jsonify({'error': 'Missing required fields'}), 400
-    
+def create_device():
+    db = SessionLocal()
     try:
-        device = DeviceDAL.add_device(device_data)
+        data = request.json
         
-        # Prepare response data
-        response_data = {
-            'mac': device.mac,
-            'name': device.name,
-            'location': {
-                'latitude': device.latitude,
-                'longitude': device.longitude
-            },
-            'status': device.status
-        }
+        if not all(k in data for k in ['mac', 'name']):
+            return jsonify({'error': 'Missing required fields'}), 400
+            
+        new_device = Device(
+            mac=data['mac'],
+            name=data['name'],
+            location=data.get('location'),
+            latitude=data.get('latitude'),
+            longitude=data.get('longitude'),
+            status=data.get('status', 'inactive'),
+            frequency=data.get('frequency', 30)  # Default to 30 seconds
+        )
         
-        # Publish event to RabbitMQ
-        publish_device_event('device_added', response_data)
+        db.add(new_device)
+        db.commit()
         
-        return jsonify(response_data), 201
+        device_data = new_device.to_dict()
+        
+        # Publish device_created event to RabbitMQ
+        publish_device_event('created', device_data)
+        
+        # Start simulation if device is active
+        if device_data['status'] == 'active':
+            start_device_simulations([device_data])
+            
+        return jsonify(device_data), 201
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 400
+        db.rollback()
+        logging.error(f"Error creating device: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        db.close()
 
 @device_bp.route('/api/devices/<mac>', methods=['PUT'])
 def update_device(mac):
-    device_data = request.get_json()
-    device = DeviceDAL.update_device(mac, device_data)
-    
-    if device:
-        response_data = {
-            'mac': device.mac,
-            'name': device.name,
-            'location': {
-                'latitude': device.latitude,
-                'longitude': device.longitude
-            },
-            'status': device.status
-        }
-        publish_device_event('device_updated', response_data)
-        return jsonify(response_data)
-    
-    return jsonify({'error': 'Device not found'}), 404
+    db = SessionLocal()
+    try:
+        device = db.query(Device).get(mac)
+        if not device:
+            return jsonify({'error': 'Device not found'}), 404
+            
+        data = request.json
+        
+        device.name = data.get('name', device.name)
+        device.location = data.get('location', device.location)
+        device.latitude = data.get('latitude', device.latitude)
+        device.longitude = data.get('longitude', device.longitude)
+        device.status = data.get('status', device.status)
+        device.frequency = data.get('frequency', device.frequency)
+        device.updated_at = datetime.utcnow()
+        
+        db.commit()
+        
+        device_data = device.to_dict()
+        
+        # Publish device_updated event to RabbitMQ
+        publish_device_event('updated', device_data)
+        
+        return jsonify(device_data)
+        
+    except Exception as e:
+        db.rollback()
+        logging.error(f"Error updating device: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        db.close()
 
 @device_bp.route('/api/devices/<mac>', methods=['DELETE'])
 def delete_device(mac):
-    device = DeviceDAL.delete_device(mac)
-    if device:
-        publish_device_event('device_deleted', {'mac': mac})
+    db = SessionLocal()
+    try:
+        device = db.query(Device).get(mac)
+        if not device:
+            return jsonify({'error': 'Device not found'}), 404
+            
+        device_data = device.to_dict()
+        db.delete(device)
+        db.commit()
+        
+        # Publish device_deleted event to RabbitMQ
+        publish_device_event('deleted', device_data)
+        
         return jsonify({'message': 'Device deleted successfully'})
-    return jsonify({'error': 'Device not found'}), 404
+        
+    except Exception as e:
+        db.rollback()
+        logging.error(f"Error deleting device: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        db.close()
 
 @device_bp.route('/api/stats', methods=['GET'])
 def get_stats():
+    db_session = SessionLocal()  # Create a new session for SQLAlchemy
     try:
-        # Get device stats
-        devices = Device.query.all()
+        # Get device stats from PostgreSQL
+        devices = db_session.query(Device).all()
         total_devices = len(devices)
         active_devices = len([d for d in devices if d.status == 'active'])
         
@@ -129,53 +265,27 @@ def get_stats():
             }
         ]
         
-        print("Fetching temperature readings from MongoDB...")
-        readings = list(readings_collection.find().sort('timestamp', -1).limit(1))
-        print(f"Recent readings: {readings}")
+        temp_stats = list(readings_collection.aggregate(pipeline))
         
-        if readings:
-            # Get all temperature readings for statistics
-            all_readings = list(readings_collection.find({}, {'temperature': 1, '_id': 0}))
-            temperatures = [r['temperature'] for r in all_readings if 'temperature' in r]
-            
-            stats = {
-                'total_devices': total_devices,
-                'active_devices': active_devices,
-                'inactive_devices': total_devices - active_devices,
-                'average_temp': sum(temperatures) / len(temperatures) if temperatures else 0.0,
-                'max_temp': max(temperatures) if temperatures else 0.0,
-                'min_temp': min(temperatures) if temperatures else 0.0,
-                'num_readings': len(temperatures),
-                'last_updated': readings[0].get('timestamp', datetime.now().isoformat())
-            }
-        else:
-            stats = {
-                'total_devices': total_devices,
-                'active_devices': active_devices,
-                'inactive_devices': total_devices - active_devices,
-                'average_temp': 0.0,
-                'max_temp': 0.0,
-                'min_temp': 0.0,
-                'num_readings': 0,
-                'last_updated': datetime.now().isoformat()
-            }
+        stats = {
+            'total_devices': total_devices,
+            'active_devices': active_devices,
+            'inactive_devices': total_devices - active_devices,
+            'average_temp': float(temp_stats[0]['average_temp']) if temp_stats else 0.0,
+            'max_temp': float(temp_stats[0]['max_temp']) if temp_stats else 0.0,
+            'min_temp': float(temp_stats[0]['min_temp']) if temp_stats else 0.0,
+            'num_readings': temp_stats[0]['num_readings'] if temp_stats else 0,
+            'last_updated': temp_stats[0]['last_updated'] if temp_stats else datetime.utcnow().isoformat()
+        }
         
-        print(f"Returning stats: {stats}")
         return jsonify(stats)
         
     except Exception as e:
-        print(f"Error getting stats:", str(e))
-        return jsonify({
-            'total_devices': 0,
-            'active_devices': 0,
-            'inactive_devices': 0,
-            'average_temp': 0.0,
-            'max_temp': 0.0,
-            'min_temp': 0.0,
-            'num_readings': 0,
-            'last_updated': datetime.now().isoformat()
-        }), 500
-
+        logging.error(f"Error getting stats: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        db_session.close()  # Close SQLAlchemy session
+    
 @device_bp.route('/api/readings/recent', methods=['GET'])
 def get_recent_readings():
     try:
@@ -189,3 +299,64 @@ def get_recent_readings():
     except Exception as e:
         print(f"Error getting recent readings: {e}")
         return jsonify({'error': str(e)}), 500
+
+def update_stats():
+    try:
+        # Get device stats
+        devices = Device.query.all()
+        total_devices = len(devices)
+        active_devices = len([d for d in devices if d.status == 'active'])
+        
+        # Get temperature stats from MongoDB
+        all_readings = list(readings_collection.find({}, {'temperature': 1, '_id': 0}))
+        temperatures = [r['temperature'] for r in all_readings if 'temperature' in r]
+        
+        if temperatures:
+            stats = {
+                'total_devices': total_devices,
+                'active_devices': active_devices,
+                'inactive_devices': total_devices - active_devices,
+                'average_temp': sum(temperatures) / len(temperatures),
+                'max_temp': max(temperatures),
+                'min_temp': min(temperatures),
+                'num_readings': len(temperatures),
+                'last_updated': datetime.now().isoformat()
+            }
+        else:
+            stats = {
+                'total_devices': total_devices,
+                'active_devices': active_devices,
+                'inactive_devices': total_devices - active_devices,
+                'average_temp': 0.0,
+                'max_temp': 0.0,
+                'min_temp': 0.0,
+                'num_readings': 0,
+                'last_updated': datetime.now().isoformat()
+            }
+        
+        # Emit updated stats via Socket.IO
+        socketio.emit('stats_updated', stats)
+        return stats
+        
+    except Exception as e:
+        print(f"Error updating stats: {e}")
+        return None
+
+@device_bp.route('/api/devices/start-simulation', methods=['POST'])
+def start_simulation():
+    db = SessionLocal()
+    try:
+        active_devices = db.query(Device).filter(Device.status == 'active').all()
+        devices_data = [device.to_dict() for device in active_devices]
+        
+        if not devices_data:
+            return jsonify({'message': 'No active devices to simulate'}), 200
+            
+        start_device_simulations(devices_data)
+        return jsonify({'message': f'Started simulation for {len(devices_data)} devices'})
+        
+    except Exception as e:
+        logging.error(f"Error starting device simulation: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        db.close()

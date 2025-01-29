@@ -1,44 +1,43 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import Plot from 'react-plotly.js';
 
 const TemperatureChart = ({ data }) => {
-  if (!data || data.length === 0) {
+  const chartData = useMemo(() => {
+    if (!data || data.length === 0) {
+      return [];
+    }
+
+    const traces = {};
+    
+    // Group data by device
+    data.forEach(reading => {
+      const deviceId = reading.device_id || 'unknown';
+      if (!traces[deviceId]) {
+        traces[deviceId] = {
+          x: [],
+          y: [],
+          type: 'scatter',
+          mode: 'lines+markers',
+          name: deviceId,
+          marker: { size: 6 }
+        };
+      }
+      traces[deviceId].x.push(new Date(reading.timestamp));
+      traces[deviceId].y.push(reading.temperature);
+    });
+
+    return Object.values(traces);
+  }, [data]);
+
+  if (chartData.length === 0) {
     return <div>No temperature data available</div>;
   }
-
-  const traces = {};
-  
-  // Group data by device
-  const colors = [
-    'rgb(192, 108, 75)',  // Orange/brown
-    'rgb(75, 192, 192)',  // Teal
-    'rgb(153, 102, 255)', // Purple
-    'rgb(255, 159, 64)',  // Orange
-    'rgb(75, 192, 75)',   // Green
-  ];
-  let colorIndex = 0;
-
-  data.forEach(reading => {
-    if (!traces[reading.device_id]) {
-      traces[reading.device_id] = {
-        x: [],
-        y: [],
-        type: 'scatter',
-        mode: 'lines+markers',
-        name: reading.device_id,
-        marker: { color: colors[colorIndex % colors.length] }
-      };
-      colorIndex++;
-    }
-    traces[reading.device_id].x.push(new Date(reading.timestamp));
-    traces[reading.device_id].y.push(reading.temperature);
-  });
 
   return (
     <div className="temperature-chart">
       <h3>Temperature Readings</h3>
       <Plot
-        data={Object.values(traces)}
+        data={chartData}
         layout={{
           autosize: true,
           margin: { l: 50, r: 20, t: 20, b: 50 },

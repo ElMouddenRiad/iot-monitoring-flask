@@ -1,10 +1,44 @@
 .device-list {
     padding: 20px;
-    font-family: 'Poppins', sans-serif;
+    background-color: #1a1a1a;
+    border-radius: 8px;
+    height: 100%;
+}
+
+.device-list-header {
+    margin-bottom: 20px;
+}
+
+.MuiListItem-root {
+    margin-bottom: 8px;
+    background-color: #2d2d2d;
+    border-radius: 4px;
+}
+
+.MuiListItem-root:hover {
+    background-color: #3d3d3d;
+}
+
+.MuiListItemText-primary {
+    color: #ffffff;
+}
+
+.MuiListItemText-secondary {
+    color: #9e9e9e;
+}
+
+.MuiIconButton-root {
+    color: #757575;
+}
+
+.MuiIconButton-root:hover {
+    color: #ffffff;
 }
 
 .device-list h2 {
     margin-bottom: 20px;
+    font-weight: bold;
+    font-family: 'Poppins';
 }
 
 .device-list table {
