@@ -10,29 +10,23 @@ from concurrent.futures import ThreadPoolExecutor
 class DeviceEventPublisher:
     def __init__(self):
         try:
-            # Try to connect to RabbitMQ with retries
-            max_retries = 3
-            for i in range(max_retries):
-                try:
-                    self.credentials = pika.PlainCredentials('guest', 'guest')  # Default credentials
-                    self.parameters = pika.ConnectionParameters(
-                        host='localhost',
-                        port=5672,
-                        virtual_host='/',
-                        credentials=self.credentials,
-                        connection_attempts=3,
-                        retry_delay=2
-                    )
-                    # Test connection
-                    test_conn = pika.BlockingConnection(self.parameters)
-                    test_conn.close()
-                    break
-                except Exception as e:
-                    if i == max_retries - 1:
-                        logging.error(f"Failed to initialize RabbitMQ connection after {max_retries} attempts: {e}")
-                    time.sleep(2)
+            # Use 127.0.0.1 since it works
+            self.parameters = pika.URLParameters('amqp://guest:guest@127.0.0.1:5672/%2F')
+            
+            print("Attempting to connect to RabbitMQ...")
+            self.connection = pika.BlockingConnection(self.parameters)
+            self.channel = self.connection.channel()
+            
+            # Declare exchange
+            self.channel.exchange_declare(
+                exchange='device_events',
+                exchange_type='topic',
+                durable=True
+            )
+            print("Successfully connected to RabbitMQ")
+            
         except Exception as e:
-            logging.error(f"Error initializing DeviceEventPublisher: {e}")
+            print(f"Error initializing RabbitMQ connection: {type(e).__name__} - {e}")
 
     def connect(self):
         try:
@@ -50,9 +44,25 @@ class DeviceEventPublisher:
 
     def publish_temperature(self, device, temperature):
         try:
-            connection, channel = self.connect()
-            if not channel:
-                return
+            # Create new connection for each publish
+            connection = pika.BlockingConnection(self.parameters)
+            channel = connection.channel()
+            
+            # Ensure exchange exists
+            channel.exchange_declare(
+                exchange='device_events',
+                exchange_type='topic',
+                durable=True
+            )
+
+            # Create queue and bind it
+            queue_name = f"device.{device['mac']}.temperature"
+            channel.queue_declare(queue=queue_name, durable=True)
+            channel.queue_bind(
+                exchange='device_events',
+                queue=queue_name,
+                routing_key=queue_name
+            )
 
             payload = {
                 'device_id': device['mac'],
@@ -66,7 +76,7 @@ class DeviceEventPublisher:
 
             channel.basic_publish(
                 exchange='device_events',
-                routing_key=f"device.{device['mac']}.temperature",
+                routing_key=queue_name,
                 body=json.dumps(payload),
                 properties=pika.BasicProperties(
                     delivery_mode=2,  # make message persistent
@@ -74,54 +84,115 @@ class DeviceEventPublisher:
                 )
             )
             
-            logging.info(f"Published temperature {temperature} for device {device['mac']}")
+            print(f"Published temperature {temperature} for device {device['mac']}")
             connection.close()
             
         except Exception as e:
-            logging.error(f"Error publishing temperature: {e}")
+            print(f"Error publishing temperature: {e}")
 
     def simulate_device_readings(self, device_data):
         try:
-            base_temp = 20.0  # Base temperature
+            # Set default values and validate data
+            base_temp = 20.0
+            
+            # Get frequency from device data
+            try:
+                frequency = int(device_data.get('frequency', 30))
+            except (TypeError, ValueError):
+                frequency = 30
+                print(f"Invalid frequency for device {device_data.get('mac')}, using default {frequency}")
+
+            device_id = device_data.get('mac', 'unknown')
+            print(f"Starting simulation for device {device_id} with frequency {frequency}s")
+
+            # Create a dedicated connection for this device
+            device_connection = pika.BlockingConnection(self.parameters)
+            device_channel = device_connection.channel()
+            device_channel.exchange_declare(
+                exchange='device_events',
+                exchange_type='topic',
+                durable=True
+            )
+
             while True:
                 try:
-                    # Generate random fluctuation between -2 and +2 degrees
-                    fluctuation = random.uniform(-2, 2)
-                    temperature = base_temp + float(fluctuation)
-                    
-                    # Create reading payload
+                    # Generate reading
+                    temperature = round(base_temp + random.uniform(-2, 2), 2)
                     reading = {
-                        'device_id': device_data['mac'],
-                        'temperature': round(temperature, 2),
+                        'device_id': device_id,
+                        'temperature': temperature,
                         'timestamp': datetime.now().isoformat()
                     }
 
                     # Add location if available
-                    if device_data.get('latitude') is not None and device_data.get('longitude') is not None:
-                        reading['location'] = {
-                            'latitude': float(device_data['latitude']),
-                            'longitude': float(device_data['longitude'])
-                        }
-                    
+                    if device_data.get('location'):
+                        try:
+                            if isinstance(device_data['location'], str):
+                                location = json.loads(device_data['location'])
+                            else:
+                                location = device_data['location']
+                            reading['location'] = {
+                                'latitude': float(location['latitude']),
+                                'longitude': float(location['longitude'])
+                            }
+                        except Exception as e:
+                            print(f"Error parsing location for device {device_id}: {e}")
+                            # Use latitude/longitude directly if available
+                            if device_data.get('latitude') and device_data.get('longitude'):
+                                reading['location'] = {
+                                    'latitude': float(device_data['latitude']),
+                                    'longitude': float(device_data['longitude'])
+                                }
+
                     # Publish reading
-                    self.publish_temperature(device_data, reading['temperature'])
+                    device_channel.basic_publish(
+                        exchange='device_events',
+                        routing_key=f"device.{device_id}.temperature",
+                        body=json.dumps(reading),
+                        properties=pika.BasicProperties(
+                            delivery_mode=2,
+                            content_type='application/json'
+                        )
+                    )
                     
+                    print(f"Published reading for device {device_id}: {temperature}°C")
+                    time.sleep(frequency)
+                    
+                except pika.exceptions.AMQPConnectionError:
+                    print(f"Connection lost for device {device_id}. Reconnecting...")
+                    device_connection = pika.BlockingConnection(self.parameters)
+                    device_channel = device_connection.channel()
+                    time.sleep(5)
                 except Exception as e:
-                    logging.error(f"Error in reading simulation: {e}")
-                    
-                # Sleep for the device's frequency or default to 30 seconds
-                time.sleep(float(device_data.get('frequency', 30)))
+                    print(f"Error in simulation for device {device_id}: {type(e).__name__} - {e}")
+                    time.sleep(5)
                 
         except Exception as e:
-            logging.error(f"Error in device simulation loop: {e}")
+            print(f"Fatal error in device simulation: {type(e).__name__} - {e}")
+        finally:
+            if 'device_connection' in locals() and device_connection.is_open:
+                device_connection.close()
 
     def start_device_simulation(self, devices):
         """Start simulating multiple devices"""
-        with ThreadPoolExecutor(max_workers=len(devices)) as executor:
-            for device in devices:
-                if device['status'] == 'active':
-                    executor.submit(self.simulate_device_readings, device)
-                    logging.info(f"Started simulation for device {device['mac']}")
+        for device in devices:
+            if device.get('status') == 'active':
+                # Start each device simulation in its own thread
+                thread = Thread(
+                    target=self.simulate_device_readings,
+                    args=(device,),
+                    daemon=True
+                )
+                thread.start()
+                print(f"Started simulation thread for device {device.get('mac')}")
+
+    def __del__(self):
+        try:
+            if hasattr(self, 'connection') and self.connection and self.connection.is_open:
+                self.connection.close()
+                print("RabbitMQ connection closed")
+        except Exception as e:
+            print(f"Error closing connection: {e}")
 
 # Update device_manage.py to use this service
 def start_device_simulations(devices):
@@ -132,3 +203,12 @@ def start_device_simulations(devices):
         daemon=True
     )
     simulation_thread.start()
+
+# Test connection
+try:
+    params = pika.URLParameters('amqp://guest:guest@127.0.0.1:5672/%2F')
+    connection = pika.BlockingConnection(params)
+    print("Successfully connected to RabbitMQ")
+    connection.close()
+except Exception as e:
+    print(f"Failed to connect: {e}")

@@ -4,19 +4,20 @@ eventlet.monkey_patch()
 from flask import Flask
 from flask_cors import CORS
 from extensions import socketio, db
-from signing.auth import auth_bp, jwt, init_redis
+from signing.auth import auth_bp, jwt
 from device_management.device_manage import device_bp
 from monitoring.monitor import store_temperature_reading
-from config import configure_app  # Import from config instead of app
-from device_management.models import init_test_devices  # Add this import
+from config import configure_app
+from device_management.models import init_test_devices
+from device_management.device_manage import test_rabbitmq_connection
 
 def create_app():
     app = Flask(__name__)
     
-    # More permissive CORS configuration for development
+    # CORS configuration
     CORS(app, 
         resources={r"/*": {
-            "origins": ["http://localhost:3000", "http://192.168.56.1:3000"],  # Add all your frontend URLs
+            "origins": ["http://localhost:3000", "http://192.168.56.1:3000"],
             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
             "allow_headers": ["Content-Type", "Authorization"],
             "expose_headers": ["Content-Range", "X-Content-Range"],
@@ -42,17 +43,12 @@ def create_app():
         db.create_all()
         init_test_devices(app)
 
-    # Initialize Redis
-    global redis_client
-    redis_client = init_redis(app)
+        # Test RabbitMQ connection
+        test_rabbitmq_connection()
 
     return app
 
 if __name__ == '__main__':
     app = create_app()
-    socketio.run(app, 
-        host='0.0.0.0', 
-        port=5000,  # You can change this to another port if needed
-        debug=True,
-        use_reloader=False
-    ) 
+    # Use eventlet's WSGI server instead of Flask's default
+    eventlet.wsgi.server(eventlet.listen(('0.0.0.0', 5000)), app) 

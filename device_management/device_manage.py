@@ -1,3 +1,4 @@
+import time
 from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_jwt_extended import JWTManager, jwt_required
@@ -16,6 +17,8 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 from .business.device_service import start_device_simulations
 import os
+from eventlet.db_pool import ConnectionPool
+from eventlet import spawn_n
 
 device_bp = Blueprint('device_bp', __name__)
 RABBITMQ_HOST = 'localhost'
@@ -24,10 +27,21 @@ mongo_client = MongoClient('mongodb+srv://bakr:bakr1234@iotproject.dl598.mongodb
 db = mongo_client['iot_platform']
 readings_collection = db['temperature_readings']
 
-# Database configuration from docker-compose
+# Database configuration
 DATABASE_URL = 'postgresql://admin:admin123@localhost:5432/iot_platform'
-engine = create_engine(DATABASE_URL, echo=True)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+engine = create_engine(
+    DATABASE_URL,
+    pool_size=10,
+    max_overflow=20,
+    pool_pre_ping=True,
+    pool_recycle=3600
+)
+SessionLocal = sessionmaker(
+    autocommit=False,
+    autoflush=False,
+    bind=engine,
+    expire_on_commit=False
+)
 Base = declarative_base()
 
 # Device Model for PostgreSQL
@@ -64,8 +78,10 @@ Base.metadata.create_all(bind=engine)
 # RabbitMQ connection (using docker-compose service name)
 def get_rabbitmq_connection():
     try:
-        credentials = pika.PlainCredentials('admin', 'admin123')
-        host = 'localhost' if not os.getenv('DOCKER_ENV') else 'rabbitmq'
+        # Use 'rabbitmq' if running in Docker, otherwise 'localhost'
+        host = 'rabbitmq' if os.getenv('DOCKER_ENV') else 'localhost'
+        
+        credentials = pika.PlainCredentials('guest', 'guest')
         parameters = pika.ConnectionParameters(
             host=host,
             port=5672,
@@ -74,9 +90,30 @@ def get_rabbitmq_connection():
         connection = pika.BlockingConnection(parameters)
         return connection
     except Exception as e:
-        logging.error(f"Failed to connect to RabbitMQ: {e}")
+        print(f"Failed to connect to RabbitMQ: {e}")
         return None
+
+def test_rabbitmq_connection():
+    connection_urls = [
+        'amqp://guest:guest@127.0.0.1:5672/%2F',
+        'amqp://guest:guest@0.0.0.0:5672/%2F',
+        'amqp://guest:guest@172.17.0.2:5672/%2F'
+    ]
     
+    for url in connection_urls:
+        try:
+            print(f"Testing connection to {url}")
+            params = pika.URLParameters(url)
+            connection = pika.BlockingConnection(params)
+            print(f"Successfully connected to RabbitMQ using {url}")
+            connection.close()
+            return True
+        except Exception as e:
+            print(f"Failed to connect using {url}: {e}")
+            continue
+    
+    print("Failed to connect to RabbitMQ using any available URLs")
+    return False
 
 def publish_device_event(event_type, device_data):
     try:
@@ -104,7 +141,6 @@ def publish_device_event(event_type, device_data):
                     content_type='application/json'
                 )
             )
-            
             connection.close()
             logging.info(f"Published {event_type} event for device {device_data.get('mac')}")
     except Exception as e:
@@ -136,10 +172,11 @@ def on_message(client, userdata, msg):
 
 @device_bp.route('/api/devices', methods=['GET'])
 def get_devices():
-    db = SessionLocal()
     try:
-        devices = db.query(Device).all()
-        return jsonify([device.to_dict() for device in devices])
+        # Use a new session for each request
+        with SessionLocal() as db:
+            devices = db.query(Device).all()
+            return jsonify([device.to_dict() for device in devices])
     except Exception as e:
         logging.error(f"Error fetching devices: {e}")
         return jsonify({'error': str(e)}), 500
@@ -152,7 +189,7 @@ def create_device():
         
         if not all(k in data for k in ['mac', 'name']):
             return jsonify({'error': 'Missing required fields'}), 400
-            
+    
         new_device = Device(
             mac=data['mac'],
             name=data['name'],
@@ -302,61 +339,62 @@ def get_recent_readings():
 
 def update_stats():
     try:
-        # Get device stats
-        devices = Device.query.all()
-        total_devices = len(devices)
-        active_devices = len([d for d in devices if d.status == 'active'])
-        
-        # Get temperature stats from MongoDB
-        all_readings = list(readings_collection.find({}, {'temperature': 1, '_id': 0}))
-        temperatures = [r['temperature'] for r in all_readings if 'temperature' in r]
-        
-        if temperatures:
-            stats = {
-                'total_devices': total_devices,
-                'active_devices': active_devices,
-                'inactive_devices': total_devices - active_devices,
-                'average_temp': sum(temperatures) / len(temperatures),
-                'max_temp': max(temperatures),
-                'min_temp': min(temperatures),
-                'num_readings': len(temperatures),
-                'last_updated': datetime.now().isoformat()
-            }
-        else:
-            stats = {
-                'total_devices': total_devices,
-                'active_devices': active_devices,
-                'inactive_devices': total_devices - active_devices,
-                'average_temp': 0.0,
-                'max_temp': 0.0,
-                'min_temp': 0.0,
-                'num_readings': 0,
-                'last_updated': datetime.now().isoformat()
-            }
-        
-        # Emit updated stats via Socket.IO
-        socketio.emit('stats_updated', stats)
-        return stats
-        
+        # Use a new session
+        with SessionLocal() as db:
+            devices = db.query(Device).all()
+            total_devices = len(devices)
+            active_devices = len([d for d in devices if d.status == 'active'])
+            
+            # Get temperature stats from MongoDB
+            all_readings = list(readings_collection.find({}, {'temperature': 1, '_id': 0}))
+            temperatures = [r['temperature'] for r in all_readings if 'temperature' in r]
+            
+            if temperatures:
+                stats = {
+                    'total_devices': total_devices,
+                    'active_devices': active_devices,
+                    'inactive_devices': total_devices - active_devices,
+                    'average_temp': sum(temperatures) / len(temperatures),
+                    'max_temp': max(temperatures),
+                    'min_temp': min(temperatures),
+                    'num_readings': len(temperatures),
+                    'last_updated': datetime.now().isoformat()
+                }
+            else:
+                stats = {
+                    'total_devices': total_devices,
+                    'active_devices': active_devices,
+                    'inactive_devices': total_devices - active_devices,
+                    'average_temp': 0.0,
+                    'max_temp': 0.0,
+                    'min_temp': 0.0,
+                    'num_readings': 0,
+                    'last_updated': datetime.now().isoformat()
+                }
+            
+            # Emit updated stats via Socket.IO
+            socketio.emit('stats_updated', stats)
+            return stats
+            
     except Exception as e:
         print(f"Error updating stats: {e}")
         return None
 
 @device_bp.route('/api/devices/start-simulation', methods=['POST'])
 def start_simulation():
-    db = SessionLocal()
     try:
-        active_devices = db.query(Device).filter(Device.status == 'active').all()
-        devices_data = [device.to_dict() for device in active_devices]
-        
-        if not devices_data:
-            return jsonify({'message': 'No active devices to simulate'}), 200
+        # Use a new session for each request
+        with SessionLocal() as db:
+            active_devices = db.query(Device).filter(Device.status == 'active').all()
+            devices_data = [device.to_dict() for device in active_devices]
             
-        start_device_simulations(devices_data)
-        return jsonify({'message': f'Started simulation for {len(devices_data)} devices'})
-        
+            if not devices_data:
+                return jsonify({'message': 'No active devices to simulate'}), 200
+                
+            # Start simulation in a new greenlet
+            spawn_n(start_device_simulations, devices_data)
+            return jsonify({'message': f'Started simulation for {len(devices_data)} devices'})
+            
     except Exception as e:
         logging.error(f"Error starting device simulation: {e}")
         return jsonify({'error': str(e)}), 500
-    finally:
-        db.close()
