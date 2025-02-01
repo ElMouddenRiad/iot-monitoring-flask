@@ -10,6 +10,10 @@ from monitoring.monitor import store_temperature_reading
 from config import configure_app
 from device_management.models import init_test_devices
 from device_management.device_manage import test_rabbitmq_connection
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
 
 def create_app():
     app = Flask(__name__)

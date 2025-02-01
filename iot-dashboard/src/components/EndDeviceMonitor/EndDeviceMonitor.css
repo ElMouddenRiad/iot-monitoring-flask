@@ -1,0 +1,55 @@
+.end-device-monitor {
+    padding: 20px;
+}
+
+.paper {
+    padding: 20px;
+    height: 100%;
+}
+
+.device-list {
+    max-height: 600px;
+    overflow-y: auto;
+}
+
+.device-item {
+    padding: 15px;
+    border-bottom: 1px solid #eee;
+    cursor: pointer;
+    position: relative;
+}
+
+.device-item:hover {
+    background-color: #f5f5f5;
+}
+
+.device-item.selected {
+    background-color: #e3f2fd;
+}
+
+.status-indicator {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    position: absolute;
+    right: 15px;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+.status-indicator.active {
+    background-color: #4caf50;
+}
+
+.status-indicator.inactive {
+    background-color: #f44336;
+}
+
+.metric-card {
+    height: 100%;
+}
+
+.chart-container {
+    height: 300px;
+    width: 100%;
+} 

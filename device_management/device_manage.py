@@ -12,7 +12,7 @@ from extensions import db  # Move db to extensions.py
 from pymongo import MongoClient
 import socketio
 import logging
-from sqlalchemy import create_engine, Column, String, DateTime, Float, Integer
+from sqlalchemy import create_engine, Column, String, DateTime, Float, Integer, Text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 from .business.device_service import start_device_simulations
@@ -397,4 +397,162 @@ def start_simulation():
             
     except Exception as e:
         logging.error(f"Error starting device simulation: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# Add this model class for end devices
+class EndDevice(Base):
+    __tablename__ = 'end_devices'
+
+    mac = Column(String(17), primary_key=True)
+    name = Column(String(100), nullable=False)
+    ip_address = Column(String(45))  # IPv4 or IPv6
+    os = Column(String(50))
+    os_version = Column(Text)
+    processor = Column(String(100))
+    machine = Column(String(50))
+    status = Column(String(20), default='inactive')
+    device_type = Column(String(20), default='computer')
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_seen = Column(DateTime)
+
+    def to_dict(self):
+        return {
+            'mac': self.mac,
+            'name': self.name,
+            'ip_address': self.ip_address,
+            'os': self.os,
+            'os_version': self.os_version,
+            'processor': self.processor,
+            'machine': self.machine,
+            'status': self.status,
+            'device_type': self.device_type,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'last_seen': self.last_seen.isoformat() if self.last_seen else None
+        }
+
+# Create the end devices table
+Base.metadata.create_all(bind=engine)
+
+# Add these new endpoints
+@device_bp.route('/api/end-devices/register', methods=['POST'])
+def register_end_device():
+    db = SessionLocal()
+    try:
+        data = request.json
+        
+        # Check if device already exists
+        existing_device = db.query(EndDevice).get(data['mac'])
+        if existing_device:
+            # Update existing device
+            existing_device.name = data['name']
+            existing_device.ip_address = data['ip_address']
+            existing_device.os = data['os']
+            existing_device.os_version = data['os_version']
+            existing_device.processor = data['processor']
+            existing_device.machine = data['machine']
+            existing_device.status = 'active'
+            existing_device.last_seen = datetime.utcnow()
+            db.commit()
+            return jsonify(existing_device.to_dict()), 200
+            
+        # Create new device
+        new_device = EndDevice(
+            mac=data['mac'],
+            name=data['name'],
+            ip_address=data['ip_address'],
+            os=data['os'],
+            os_version=data['os_version'],
+            processor=data['processor'],
+            machine=data['machine'],
+            status='active',
+            last_seen=datetime.utcnow()
+        )
+        
+        db.add(new_device)
+        db.commit()
+        
+        return jsonify(new_device.to_dict()), 201
+        
+    except Exception as e:
+        db.rollback()
+        logging.error(f"Error registering end device: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        db.close()
+
+@device_bp.route('/api/end-devices', methods=['GET'])
+def get_end_devices():
+    db = SessionLocal()
+    try:
+        devices = db.query(EndDevice).all()
+        return jsonify([device.to_dict() for device in devices])
+    except Exception as e:
+        logging.error(f"Error fetching end devices: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        db.close()
+
+@device_bp.route('/api/end-devices/metrics', methods=['POST'])
+def receive_end_device_metrics():
+    db = SessionLocal()
+    try:
+        metrics = request.json
+        device_id = metrics.get('device_id')
+        
+        # Update device status in PostgreSQL
+        if device_id:
+            device = db.query(EndDevice).get(device_id)
+            if device:
+                device.last_seen = datetime.utcnow()
+                device.status = 'active'
+                db.commit()
+        
+        # Store metrics in MongoDB
+        metrics['timestamp'] = datetime.utcnow()
+        readings_collection.insert_one(metrics)
+        
+        return jsonify({'status': 'success'}), 200
+        
+    except Exception as e:
+        db.rollback()
+        logging.error(f"Error processing end device metrics: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        db.close()
+
+@device_bp.route('/api/end-devices/<mac>', methods=['DELETE'])
+def delete_end_device(mac):
+    db = SessionLocal()
+    try:
+        device = db.query(EndDevice).get(mac)
+        if not device:
+            return jsonify({'error': 'End device not found'}), 404
+            
+        db.delete(device)
+        db.commit()
+        
+        return jsonify({'message': 'End device deleted successfully'})
+        
+    except Exception as e:
+        db.rollback()
+        logging.error(f"Error deleting end device: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        db.close()
+
+@device_bp.route('/api/end-devices/metrics/<mac>', methods=['GET'])
+def get_end_device_metrics(mac):
+    try:
+        # Get the latest metrics for the device from MongoDB
+        metrics = readings_collection.find(
+            {'device_id': mac},
+            {'_id': 0}
+        ).sort('timestamp', -1).limit(100)  # Get last 100 readings
+        
+        return jsonify(list(metrics))
+        
+    except Exception as e:
+        logging.error(f"Error fetching end device metrics: {e}")
         return jsonify({'error': str(e)}), 500

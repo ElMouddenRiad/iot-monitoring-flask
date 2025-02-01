@@ -48,3 +48,8 @@ body {
     transform: rotate(360deg);
   }
 }
+
+/* Add padding to account for the app bar if you have one */
+main {
+  padding-top: 20px;
+}
