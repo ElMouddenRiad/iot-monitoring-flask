@@ -15,10 +15,37 @@ import {
     InputLabel,
     Select,
     MenuItem,
-    Box
+    Box,
+    Typography
 } from '@mui/material';
 import { Edit, Delete, Visibility } from '@mui/icons-material';
+import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
 import './DeviceList.css';
+
+// Fix for default marker icon
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+    iconRetinaUrl: require('leaflet/dist/images/marker-icon-2x.png'),
+    iconUrl: require('leaflet/dist/images/marker-icon.png'),
+    shadowUrl: require('leaflet/dist/images/marker-shadow.png'),
+});
+
+function LocationSelector({ onSelect, initialPosition }) {
+    const [position, setPosition] = useState(initialPosition || null);
+
+    useMapEvents({
+        click(e) {
+            setPosition(e.latlng);
+            onSelect(e.latlng);
+        },
+    });
+
+    return position === null ? null : (
+        <Marker position={position}></Marker>
+    );
+}
 
 function DeviceList({ onDeviceSelect }) {
     const [devices, setDevices] = useState([]);
@@ -28,8 +55,9 @@ function DeviceList({ onDeviceSelect }) {
     const [formData, setFormData] = useState({
         name: '',
         mac: '',
-        location: '',
-        status: 'inactive'
+        status: 'inactive',
+        latitude: null,
+        longitude: null
     });
 
     useEffect(() => {
@@ -52,6 +80,12 @@ function DeviceList({ onDeviceSelect }) {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        // Ensure latitude and longitude are selected
+        if (formData.latitude === null || formData.longitude === null) {
+            alert('Please select a location on the map.');
+            return;
+        }
+
         try {
             const url = selectedDevice 
                 ? `http://localhost:5000/api/devices/${selectedDevice.mac}`
@@ -104,8 +138,9 @@ function DeviceList({ onDeviceSelect }) {
         setFormData({
             name: device.name,
             mac: device.mac,
-            location: device.location || '',
-            status: device.status
+            status: device.status,
+            latitude: device.latitude || null,
+            longitude: device.longitude || null
         });
         setOpenDialog(true);
     };
@@ -115,8 +150,17 @@ function DeviceList({ onDeviceSelect }) {
         setFormData({
             name: '',
             mac: '',
-            location: '',
-            status: 'inactive'
+            status: 'inactive',
+            latitude: null,
+            longitude: null
+        });
+    };
+
+    const handleLocationSelect = (latlng) => {
+        setFormData({
+            ...formData,
+            latitude: latlng.lat,
+            longitude: latlng.lng
         });
     };
 
@@ -181,7 +225,7 @@ function DeviceList({ onDeviceSelect }) {
                 ))}
             </List>
 
-            <Dialog open={openDialog} onClose={() => setOpenDialog(false)}>
+            <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="md" fullWidth>
                 <DialogTitle>
                     {selectedDevice ? 'Edit Device' : 'Add New Device'}
                 </DialogTitle>
@@ -204,13 +248,6 @@ function DeviceList({ onDeviceSelect }) {
                             required
                             disabled={!!selectedDevice}
                         />
-                        <TextField
-                            fullWidth
-                            label="Location"
-                            value={formData.location}
-                            onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                            margin="normal"
-                        />
                         <FormControl fullWidth margin="normal">
                             <InputLabel>Status</InputLabel>
                             <Select
@@ -222,6 +259,33 @@ function DeviceList({ onDeviceSelect }) {
                                 <MenuItem value="inactive">Inactive</MenuItem>
                             </Select>
                         </FormControl>
+
+                        <Typography variant="subtitle1" sx={{ mt: 2, mb: 1 }}>
+                            Select Location
+                        </Typography>
+                        <Box sx={{ height: 300 }}>
+                            <MapContainer 
+                                center={formData.latitude && formData.longitude ? [formData.latitude, formData.longitude] : [0, 0]} 
+                                zoom={formData.latitude && formData.longitude ? 13 : 2} 
+                                style={{ height: '100%', width: '100%' }}
+                            >
+                                <TileLayer
+                                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                                />
+                                <LocationSelector 
+                                    onSelect={handleLocationSelect} 
+                                    initialPosition={formData.latitude && formData.longitude ? { lat: formData.latitude, lng: formData.longitude } : null}
+                                />
+                            </MapContainer>
+                        </Box>
+                        {formData.latitude && formData.longitude && (
+                            <Box sx={{ mt: 2 }}>
+                                <Typography variant="body2">
+                                    Selected Location: Latitude {formData.latitude.toFixed(6)}, Longitude {formData.longitude.toFixed(6)}
+                                </Typography>
+                            </Box>
+                        )}
                     </Box>
                 </DialogContent>
                 <DialogActions>

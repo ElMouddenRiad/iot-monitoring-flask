@@ -27,7 +27,7 @@ function EndDeviceMonitor() {
         };
 
         fetchEndDevices();
-        const interval = setInterval(fetchEndDevices, 30000); // Refresh every 30 seconds
+        const interval = setInterval(fetchEndDevices, 60000); // Refresh every 60 seconds
 
         return () => clearInterval(interval);
     }, []);
@@ -51,7 +51,7 @@ function EndDeviceMonitor() {
         };
 
         fetchMetrics();
-        const interval = setInterval(fetchMetrics, 5000); // Refresh every 5 seconds
+        const interval = setInterval(fetchMetrics, 60000); // Refresh every 60 seconds
 
         return () => clearInterval(interval);
     }, [selectedDevice]);
@@ -109,7 +109,7 @@ function EndDeviceMonitor() {
                                     {loading ? (
                                         <Typography>Loading metrics...</Typography>
                                     ) : (
-                                        <LineChart width={500} height={300} data={metrics}>
+                                        <LineChart width={440} height={300} data={metrics}>
                                             <CartesianGrid strokeDasharray="3 3" />
                                             <XAxis dataKey="timestamp" />
                                             <YAxis />
@@ -135,7 +135,7 @@ function EndDeviceMonitor() {
                                     {loading ? (
                                         <Typography>Loading metrics...</Typography>
                                     ) : (
-                                        <LineChart width={500} height={300} data={metrics}>
+                                        <LineChart width={440} height={300} data={metrics}>
                                             <CartesianGrid strokeDasharray="3 3" />
                                             <XAxis dataKey="timestamp" />
                                             <YAxis />

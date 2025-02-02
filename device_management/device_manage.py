@@ -26,6 +26,7 @@ RABBITMQ_HOST = 'localhost'
 mongo_client = MongoClient('mongodb+srv://bakr:bakr1234@iotproject.dl598.mongodb.net/?retryWrites=true&w=majority&appName=IotProject')
 db = mongo_client['iot_platform']
 readings_collection = db['temperature_readings']
+end_device_collection = db['end_device_metrics']
 
 # Database configuration
 DATABASE_URL = 'postgresql://admin:admin123@localhost:5432/iot_platform'
@@ -511,7 +512,7 @@ def receive_end_device_metrics():
         
         # Store metrics in MongoDB
         metrics['timestamp'] = datetime.utcnow()
-        readings_collection.insert_one(metrics)
+        end_device_collection.insert_one(metrics)
         
         return jsonify({'status': 'success'}), 200
         
@@ -546,10 +547,10 @@ def delete_end_device(mac):
 def get_end_device_metrics(mac):
     try:
         # Get the latest metrics for the device from MongoDB
-        metrics = readings_collection.find(
+        metrics = end_device_collection.find(
             {'device_id': mac},
             {'_id': 0}
-        ).sort('timestamp', -1).limit(100)  # Get last 100 readings
+        ).sort('timestamp', -1).limit(50)  # Get last 50 readings
         
         return jsonify(list(metrics))
         
