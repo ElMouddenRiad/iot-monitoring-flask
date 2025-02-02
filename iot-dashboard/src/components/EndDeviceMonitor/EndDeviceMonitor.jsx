@@ -99,7 +99,7 @@ function EndDeviceMonitor() {
                 {/* Metrics Display */}
                 <Grid item xs={12} md={9}>
                     {selectedDevice ? (
-                        <Grid container spacing={3}>
+                        <Grid container spacing={2}>
                             {/* CPU Usage Chart */}
                             <Grid item xs={12} md={6}>
                                 <Paper className="paper">
@@ -127,7 +127,7 @@ function EndDeviceMonitor() {
                             </Grid>
 
                             {/* Memory Usage Chart */}
-                            <Grid item xs={12} md={6}>
+                            <Grid item xs={'auto'} md={6}>
                                 <Paper className="paper">
                                     <Typography variant="h6" gutterBottom>
                                         Memory Usage

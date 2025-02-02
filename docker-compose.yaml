@@ -29,7 +29,12 @@ services:
       - postgres_data:/var/lib/postgresql/data
     networks:
     - iot_network
-
+  mqtt:
+    image: eclipse-mosquitto:latest
+    ports:
+      - "1883:1883"
+    networks:
+      - iot_network
   redis:
     image: redis:latest
     ports:
@@ -37,16 +42,18 @@ services:
     networks:
       - iot_network
 
-  auth_service:
-    build: ./signing
-    ports:
-      - "5000:5000"
-    depends_on:
-      - postgres
-      - redis
+  # auth_service:
+  #   build: ./signing
+  #   ports:
+  #     - "5000:5000"
+  #   depends_on:
+  #     - postgres
+  #     - redis
 
   device_management:
-    build: ./device_management
+    build: 
+      context: ./device_management
+      dockerfile: Dockerfile
     container_name: device_management
     environment:
       POSTGRES_USER: admin
@@ -59,15 +66,56 @@ services:
     depends_on:
       - postgres
       - rabbitmq
+      - mqtt
+      - redis
+      # - auth_service
 
-  monitoring_service:
-    build: ./monitoring
+  # monitoring_service:
+  #   build: ./monitoring
+  #   ports:
+  #     - "5002:5002"
+  #   depends_on:
+  #     - mongodb
+  #     - rabbitmq
+
+  iot_device:
+    build:
+      context: ./iot-device
+      dockerfile: Dockerfile
     ports:
-      - "5002:5002"
+      - "5003:5003"
+    environment:
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=admin123
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=iot_platform
+      - RABBITMQ_HOST=rabbitmq
+      - MONGODB_HOST=mongodb
     depends_on:
-      - mongodb
       - rabbitmq
+      - mongodb
+      - postgres
+      - mqtt
 
+  end_device:
+    build:
+      context: ./end-device
+      dockerfile: Dockerfile
+    ports:
+      - "5004:5004"
+    environment:
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=admin123
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=iot_platform
+      - MONGODB_HOST=mongodb
+    depends_on:
+      - rabbitmq
+      - postgres
+      - mongodb
+      
 networks:
   iot_network:
     driver: bridge
