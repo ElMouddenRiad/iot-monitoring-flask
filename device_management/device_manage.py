@@ -171,7 +171,8 @@ def on_message(client, userdata, msg):
     except Exception as e:
         print(f"Error processing message: {e}")
 
-@device_bp.route('/api/devices', methods=['GET'])
+@device_bp.route('/devices', methods=['GET'])
+@jwt_required()
 def get_devices():
     try:
         # Use a new session for each request
@@ -182,7 +183,8 @@ def get_devices():
         logging.error(f"Error fetching devices: {e}")
         return jsonify({'error': str(e)}), 500
 
-@device_bp.route('/api/devices', methods=['POST'])
+@device_bp.route('/devices', methods=['POST'])
+@jwt_required()
 def create_device():
     db = SessionLocal()
     try:
@@ -222,7 +224,8 @@ def create_device():
     finally:
         db.close()
 
-@device_bp.route('/api/devices/<mac>', methods=['PUT'])
+@device_bp.route('/devices/<mac>', methods=['PUT'])
+@jwt_required()
 def update_device(mac):
     db = SessionLocal()
     try:
@@ -256,7 +259,8 @@ def update_device(mac):
     finally:
         db.close()
 
-@device_bp.route('/api/devices/<mac>', methods=['DELETE'])
+@device_bp.route('/devices/<mac>', methods=['DELETE'])
+@jwt_required()
 def delete_device(mac):
     db = SessionLocal()
     try:
@@ -280,7 +284,8 @@ def delete_device(mac):
     finally:
         db.close()
 
-@device_bp.route('/api/stats', methods=['GET'])
+@device_bp.route('/stats', methods=['GET'])
+@jwt_required()
 def get_stats():
     db_session = SessionLocal()  # Create a new session for SQLAlchemy
     try:
@@ -324,7 +329,8 @@ def get_stats():
     finally:
         db_session.close()  # Close SQLAlchemy session
     
-@device_bp.route('/api/readings/recent', methods=['GET'])
+@device_bp.route('/readings/recent', methods=['GET'])
+@jwt_required()
 def get_recent_readings():
     try:
         # Get last 50 readings from MongoDB
@@ -381,7 +387,8 @@ def update_stats():
         print(f"Error updating stats: {e}")
         return None
 
-@device_bp.route('/api/devices/start-simulation', methods=['POST'])
+@device_bp.route('/devices/start-simulation', methods=['POST'])
+@jwt_required()
 def start_simulation():
     try:
         # Use a new session for each request
@@ -437,7 +444,8 @@ class EndDevice(Base):
 Base.metadata.create_all(bind=engine)
 
 # Add these new endpoints
-@device_bp.route('/api/end-devices/register', methods=['POST'])
+@device_bp.route('/end-devices/register', methods=['POST'])
+@jwt_required()
 def register_end_device():
     db = SessionLocal()
     try:
@@ -483,7 +491,8 @@ def register_end_device():
     finally:
         db.close()
 
-@device_bp.route('/api/end-devices', methods=['GET'])
+@device_bp.route('/end-devices', methods=['GET'])
+@jwt_required()
 def get_end_devices():
     db = SessionLocal()
     try:
@@ -495,7 +504,8 @@ def get_end_devices():
     finally:
         db.close()
 
-@device_bp.route('/api/end-devices/metrics', methods=['POST'])
+@device_bp.route('/end-devices/metrics', methods=['POST'])
+@jwt_required()
 def receive_end_device_metrics():
     db = SessionLocal()
     try:
@@ -523,7 +533,8 @@ def receive_end_device_metrics():
     finally:
         db.close()
 
-@device_bp.route('/api/end-devices/<mac>', methods=['DELETE'])
+@device_bp.route('/end-devices/<mac>', methods=['DELETE'])
+@jwt_required()
 def delete_end_device(mac):
     db = SessionLocal()
     try:
@@ -543,7 +554,8 @@ def delete_end_device(mac):
     finally:
         db.close()
 
-@device_bp.route('/api/end-devices/metrics/<mac>', methods=['GET'])
+@device_bp.route('/end-devices/metrics/<mac>', methods=['GET'])
+@jwt_required()
 def get_end_device_metrics(mac):
     try:
         # Get the latest metrics for the device from MongoDB

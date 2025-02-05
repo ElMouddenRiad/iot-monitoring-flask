@@ -8,7 +8,7 @@ import Statistics from '../Statistics/Statistics';
 import DeviceModal from '../DeviceModal/DeviceModal';
 import { deviceService } from '../../services/api';
 import { io } from 'socket.io-client';
-
+import useAuth from '../../hooks/useAuth';
 const socket = io('http://localhost:5000', {
     transports: ['websocket', 'polling'],
     reconnection: true,
@@ -33,6 +33,8 @@ function Dashboard() {
     const [editingDevice, setEditingDevice] = useState(null);
     const [temperatureData, setTemperatureData] = useState([]);
     const [stats, setStats] = useState(null);
+    
+    useAuth(); // Ensure user is authenticated
 
     const fetchStats = async () => {
         try {

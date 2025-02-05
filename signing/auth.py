@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify, Blueprint
-from flask_jwt_extended import JWTManager, create_access_token, jwt_required
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity, get_jwt
 import redis
 import bcrypt
 from datetime import timedelta
@@ -7,12 +7,15 @@ import os
 from extensions import db  # Import db from extensions
 from redis import Redis
 from urllib.parse import urlparse
+import logging
+
 auth_bp = Blueprint('auth', __name__)
 
 # Initialize extensions
 jwt = JWTManager()
 
 def init_redis(app):
+
     try:
         redis_url = urlparse(app.config['REDIS_URL'])
         redis_client = Redis(
@@ -36,15 +39,24 @@ class User(db.Model):
     username = db.Column(db.String(80), unique=True, nullable=False)
     password = db.Column(db.String(120), nullable=False)
 
+    def check_password(self, password):
+        return bcrypt.checkpw(password.encode('utf-8'), self.password.encode('utf-8'))
 @auth_bp.route('/register', methods=['POST'])
 def register():
     data = request.get_json()
     
-    if User.query.filter_by(username=data['username']).first():
+    logging.info(f"Received registration attempt: {data}")
+    if User.query.filter_by(username=data.get('username')).first():
         return jsonify({'error': 'Username already exists'}), 400
     
-    hashed_password = bcrypt.hashpw(data['password'].encode('utf-8'), bcrypt.gensalt())
-    new_user = User(username=data['username'], password=hashed_password)
+    hashed_password = bcrypt.hashpw(
+        data['password'].encode('utf-8'), bcrypt.gensalt()
+    ).decode('utf-8')
+    
+    new_user = User(
+        username=data['username'], 
+        password=hashed_password
+    )
     
     db.session.add(new_user)
     db.session.commit()
@@ -54,16 +66,32 @@ def register():
 @auth_bp.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
-    user = User.query.filter_by(username=data['username']).first()
-    
-    if user and bcrypt.checkpw(data['password'].encode('utf-8'), user.password.encode('utf-8')):
-        access_token = create_access_token(identity=user.username)
-        # Store token in Redis
-        redis_client.setex(
-            f"token_{user.username}",
-            auth_bp.config['JWT_ACCESS_TOKEN_EXPIRES'].total_seconds(),
-            access_token
-        )
-        return jsonify({'token': access_token}), 200
-    
-    return jsonify({'error': 'Invalid credentials'}), 401
+    logging.info(f"Login attempt with data: {data}")
+    username = data.get('username')
+    password = data.get('password')
+
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        logging.error("User not found")
+        return jsonify({"error": "Invalid credentials"}), 401
+
+    if not bcrypt.checkpw(password.encode('utf-8'), user.password.encode('utf-8')):
+        logging.error("Password check failed")
+        return jsonify({"error": "Invalid credentials"}), 401
+
+    access_token = create_access_token(identity=user.id)
+    return jsonify({"access_token": access_token}), 200
+
+@auth_bp.route('/logout', methods=['POST'])
+@jwt_required()
+def logout():
+    jti = get_jwt()["jti"]
+    # Revoke the token by removing it from Redis
+    redis_client.delete(f"token_{jti}")
+    return jsonify({"msg": "Successfully logged out"}), 200
+
+@auth_bp.route('/protected', methods=['GET'])
+@jwt_required()
+def protected():
+    current_user = get_jwt_identity()
+    return jsonify(logged_in_as=current_user), 200

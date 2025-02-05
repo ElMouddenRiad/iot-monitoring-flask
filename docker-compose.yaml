@@ -43,7 +43,9 @@ services:
       - iot_network
 
   # auth_service:
-  #   build: ./signing
+  #   build:
+  #     context: ./signing
+  #     dockerfile: Dockerfile
   #   ports:
   #     - "5000:5000"
   #   depends_on:

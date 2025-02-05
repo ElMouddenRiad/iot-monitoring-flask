@@ -1,19 +1,37 @@
 import eventlet
 eventlet.monkey_patch()
 
-from flask import Flask
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 from extensions import socketio, db
-from signing.auth import auth_bp, jwt
+from signing.auth import auth_bp, jwt, redis_client, init_redis
 from device_management.device_manage import device_bp
 from monitoring.monitor import store_temperature_reading
 from config import configure_app
 from device_management.models import init_test_devices
 from device_management.device_manage import test_rabbitmq_connection
 import logging
+from flask_jwt_extended import JWTManager
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
+
+# Callback to check if a token is revoked
+@jwt.token_in_blocklist_loader
+def check_if_token_revoked(jwt_header, jwt_payload):
+    jti = jwt_payload["jti"]
+    token = redis_client.get(f"token_{jti}")
+    return token is None  # If token not found in Redis, it's revoked
+
+# Handle revoked token response
+@jwt.revoked_token_loader
+def revoked_token_callback(jwt_header, jwt_payload):
+    return jsonify({"error": "Token has been revoked"}), 401
+
+# Handle expired token response
+@jwt.expired_token_loader
+def expired_token_callback(jwt_header, jwt_payload):
+    return jsonify({"error": "Token has expired"}), 401
 
 def create_app():
     app = Flask(__name__)
@@ -36,13 +54,19 @@ def create_app():
     jwt.init_app(app)
     socketio.init_app(app)
 
+    # Initialize Redis
+    global redis_client
+    redis_client = init_redis(app)
+    if redis_client:
+        auth_bp.redis_client = redis_client
+
     # Register blueprints
-    app.register_blueprint(auth_bp)
-    app.register_blueprint(device_bp)
+    app.register_blueprint(auth_bp, url_prefix='/auth')
+    app.register_blueprint(device_bp, url_prefix='/api')
 
     # Initialize database and test data
     with app.app_context():
-        # Drop all tables and recreate them
+        # **Remove the following lines in production**
         db.drop_all()
         db.create_all()
         init_test_devices(app)

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   Drawer,
   List,
@@ -8,18 +8,21 @@ import {
   ListItemText,
   Typography,
   Divider,
+  Button,
 } from '@mui/material';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import DevicesIcon from '@mui/icons-material/Devices';
+import ExitToAppIcon from '@mui/icons-material/ExitToApp';
 
 const drawerWidth = 240;
 
 function Sidebar() {
   const location = useLocation();
+  const navigate = useNavigate();
 
   const menuItems = [
     {
-      text: 'IOT Dashboard',
+      text: 'Dashboard',
       icon: <DashboardIcon />,
       path: '/dashboard'
     },
@@ -29,6 +32,30 @@ function Sidebar() {
       path: '/device-monitor'
     }
   ];
+
+  const handleLogout = async () => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      try {
+        const response = await fetch('http://localhost:5000/auth/logout', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          }
+        });
+
+        if (response.ok) {
+          localStorage.removeItem('token');
+          navigate('/login');
+        } else {
+          console.error('Logout failed.');
+        }
+      } catch (error) {
+        console.error('Logout error:', error);
+      }
+    }
+  };
 
   return (
     <Drawer
@@ -69,6 +96,20 @@ function Sidebar() {
               <ListItemText primary={item.text} sx={{ fontFamily: 'Poppins' }} />
             </ListItem>
           ))}
+        </List>
+        <Divider />
+        <List>
+          <ListItem>
+            <Button
+              variant="outlined"
+              color="secondary"
+              startIcon={<ExitToAppIcon />}
+              onClick={handleLogout}
+              fullWidth
+            >
+              Logout
+            </Button>
+          </ListItem>
         </List>
       </div>
     </Drawer>

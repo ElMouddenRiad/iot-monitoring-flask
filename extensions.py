@@ -1,10 +1,12 @@
 from flask_socketio import SocketIO
 from flask_sqlalchemy import SQLAlchemy
+from flask_jwt_extended import JWTManager
 import eventlet
 eventlet.monkey_patch()
 
 # Create shared instances
 db = SQLAlchemy()
+jwt = JWTManager()
 socketio = SocketIO(
     cors_allowed_origins=["http://localhost:3000", "http://192.168.56.1:3000"],  # Add all your frontend URLs
     async_mode='eventlet',

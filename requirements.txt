@@ -20,3 +20,5 @@ black==22.3.0  # Code formatter
 flake8==4.0.1  # Code linter
 pytest==7.1.1  # Testing framework
 python-dotenv==0.19.0  # Environment variable management
+gunicorn==20.1.0
+flask-jwt-extended==4.4.4
