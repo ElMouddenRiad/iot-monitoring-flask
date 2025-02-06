@@ -22,8 +22,12 @@ const TemperatureChart = ({ data }) => {
           marker: { size: 6 }
         };
       }
-      traces[deviceId].x.push(new Date(reading.timestamp));
-      traces[deviceId].y.push(reading.temperature);
+      // Ensure timestamp is in correct format
+      const timestamp = new Date(reading.timestamp);
+      if (!isNaN(timestamp)) {
+        traces[deviceId].x.push(timestamp);
+        traces[deviceId].y.push(parseFloat(reading.temperature));
+      }
     });
 
     return Object.values(traces);
@@ -40,26 +44,29 @@ const TemperatureChart = ({ data }) => {
         data={chartData}
         layout={{
           autosize: true,
-          margin: { l: 50, r: 20, t: 20, b: 50 },
+          margin: { l: 50, r: 20, t: 40, b: 50 },
           showlegend: true,
           xaxis: {
             title: 'Time',
             type: 'date',
-            tickformat: '%I:%M:%S %p',
-            showgrid: true
+            tickformat: '%I:%M %p',
+            showgrid: true,
+            automargin: true
           },
           yaxis: {
             title: 'Temperature (°C)',
-            showgrid: true
+            showgrid: true,
+            automargin: true
           },
           paper_bgcolor: 'rgba(255, 255, 255, 0.84)',
           plot_bgcolor: 'rgba(221, 208, 208, 0)',
         }}
         config={{
           responsive: true,
-          displayModeBar: false
+          displayModeBar: true
         }}
-        style={{ width: '100%', height: '400px' }}
+        style={{ width: '100%', minHeight: '400px' }}
+        useResizeHandler={true}
       />
     </div>
   );

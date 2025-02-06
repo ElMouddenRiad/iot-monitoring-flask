@@ -334,15 +334,25 @@ def get_stats():
 @device_bp.route('/readings/recent', methods=['GET'])
 @jwt_required()
 def get_recent_readings():
-    device_id = request.args.get('device_id')
     try:
-        # Get last 50 readings from MongoDB
+        # Get last 50 readings from MongoDB for all devices
         readings = list(readings_collection.find(
-            {'device_id': device_id},
+            {},  # Empty filter to get all documents
             {'_id': 0}
         ).sort('timestamp', -1).limit(50))
         
-        return jsonify(readings)
+        # Format timestamps and ensure proper data structure
+        formatted_readings = []
+        for reading in readings:
+            if 'timestamp' in reading:
+                try:
+                    reading['timestamp'] = datetime.fromisoformat(reading['timestamp']).isoformat()
+                except:
+                    reading['timestamp'] = datetime.utcnow().isoformat()
+            formatted_readings.append(reading)
+        
+        return jsonify(formatted_readings)
+        
     except Exception as e:
         print(f"Error getting recent readings: {e}")
         return jsonify({'error': str(e)}), 500

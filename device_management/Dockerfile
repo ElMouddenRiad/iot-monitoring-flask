@@ -14,11 +14,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Expose the port the app runs on
-EXPOSE 5000
+EXPOSE 5001
 
 # Define environment variable
-ENV FLASK_APP=wsgi.py
+ENV FLASK_APP=device_manage.py
 ENV FLASK_ENV=development
 
+
+
 # Run the application
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "wsgi:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5001", "device_manage:app"]

@@ -14,11 +14,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Expose the port the app runs on
-EXPOSE 5004
+EXPOSE 5003
 
 # Define environment variable
 ENV FLASK_APP=end_device.py
 ENV FLASK_ENV=development
 
 # Run the application
-CMD ["gunicorn", "--bind", "0.0.0.0:5004", "end_device:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5003", "end_device:app"]

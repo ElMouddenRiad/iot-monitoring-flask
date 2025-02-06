@@ -42,15 +42,21 @@ services:
     networks:
       - iot_network
 
-  # auth_service:
-  #   build:
-  #     context: ./signing
-  #     dockerfile: Dockerfile
-  #   ports:
-  #     - "5000:5000"
-  #   depends_on:
-  #     - postgres
-  #     - redis
+  main_service:
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    ports:
+      - "5000:5000"
+    depends_on:
+      - postgres
+      - redis
+      - rabbitmq
+      - mqtt
+      - mongodb
+      - iot_device
+      - end_device
+      - device_management
 
   device_management:
     build: 
@@ -70,28 +76,21 @@ services:
       - rabbitmq
       - mqtt
       - redis
-      # - auth_service
-
-  # monitoring_service:
-  #   build: ./monitoring
-  #   ports:
-  #     - "5002:5002"
-  #   depends_on:
-  #     - mongodb
-  #     - rabbitmq
+    
 
   iot_device:
     build:
       context: ./iot-device
       dockerfile: Dockerfile
     ports:
-      - "5003:5003"
+      - "5002:5002"
     environment:
       - POSTGRES_USER=admin
       - POSTGRES_PASSWORD=admin123
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_DB=iot_platform
+
       - RABBITMQ_HOST=rabbitmq
       - MONGODB_HOST=mongodb
     depends_on:
@@ -105,7 +104,7 @@ services:
       context: ./end-device
       dockerfile: Dockerfile
     ports:
-      - "5004:5004"
+      - "5003:5003"
     environment:
       - POSTGRES_USER=admin
       - POSTGRES_PASSWORD=admin123

@@ -44,23 +44,41 @@ function Dashboard() {
                 Navigate('/login');
                 return;
             }
+            
+            // Add validation for required fields
+            if (!selectedDevice) {
+                console.warn('No device selected');
+                return;
+            }
+
             const response = await fetch(`${API_BASE_URL}/api/stats`, {
+                method: 'POST',
                 headers: {
+                    'Content-Type': 'application/json',
                     Authorization: `Bearer ${token}`,
                 },
+                body: JSON.stringify({
+                    device_id: selectedDevice
+                })
             });
+
             if (!response.ok) {
                 if (response.status === 401) {
                     localStorage.removeItem('token');
                     Navigate('/login');
                     return;
                 }
+                if (response.status === 422) {
+                    const errorData = await response.json();
+                    console.error('Validation error:', errorData);
+                    return;
+                }
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
+
             const statsData = await response.json();
             console.log('Fetched stats:', statsData);
             setStats(statsData);
-
 
         } catch (error) {
             console.error('Error fetching stats:', error);
@@ -100,9 +118,18 @@ function Dashboard() {
 
         socket.on('new_reading', (reading) => {
             console.log('New temperature reading received:', reading);
+            // Validate reading data
+            if (!reading || !reading.device_id || !reading.temperature || !reading.timestamp) {
+                console.error('Invalid reading data:', reading);
+                return;
+            }
+            
             setTemperatureData(prevData => {
-                const newData = [...prevData, reading];
-                // Keep only last 50 readings
+                const newData = [...prevData, {
+                    ...reading,
+                    timestamp: new Date(reading.timestamp),
+                    temperature: parseFloat(reading.temperature)
+                }];
                 return newData.slice(-50);
             });
             updateData(reading); 

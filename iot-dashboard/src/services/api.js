@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { Navigate } from 'react-router-dom';
 
 const API_BASE_URL = 'http://localhost:5000';
 const token = localStorage.getItem('token');
@@ -67,9 +68,15 @@ export const deviceService = {
 
     getRecentReadings: async () => {
         try {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                Navigate('/login');
+                return;
+            }
             const response = await axios.get(`${API_BASE_URL}/api/readings/recent`, {
                 headers: {
                     Authorization: `Bearer ${token}`,
+
                 },
             });
             return response.data;

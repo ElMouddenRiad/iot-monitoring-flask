@@ -14,11 +14,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Expose the port the app runs on
-EXPOSE 5003
+EXPOSE 5002
 
 # Define environment variable
 ENV FLASK_APP=iot.py
 ENV FLASK_ENV=development
 
 # Run the application
-CMD ["gunicorn", "--bind", "0.0.0.0:5003", "iot:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5002", "iot:app"]
