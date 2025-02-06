@@ -36,17 +36,15 @@ function SignIn() {
         e.preventDefault();
         setError('');
         setLoading(true);
-
+    
         try {
             const response = await axios.post('http://localhost:5000/auth/login', {
                 username: formData.username,
-                password: formData.password
+                password: formData.password,
             });
             const token = response.data.access_token;
-            // Save token to localStorage
-            localStorage.setItem('token', token);
-            // Redirect to dashboard or desired page
-            navigate('/dashboard');
+            localStorage.setItem('token', token);  // Store the token in localStorage
+            navigate('/dashboard');  // Redirect to the dashboard
         } catch (error) {
             console.error('Login error:', error.response?.data);
             setError(error.response?.data?.error || 'An unexpected error occurred');

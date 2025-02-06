@@ -66,7 +66,12 @@ function DeviceList({ onDeviceSelect }) {
 
     const fetchDevices = async () => {
         try {
-            const response = await fetch('http://localhost:5000/api/devices');
+            const token = localStorage.getItem('token');  // Retrieve the token from localStorage
+            const response = await fetch('http://localhost:5000/api/devices', {
+                headers: {
+                    Authorization: `Bearer ${token}`,  // Add the token to the headers
+                },
+            });
             if (!response.ok) {
                 throw new Error('Failed to fetch devices');
             }
@@ -118,10 +123,15 @@ function DeviceList({ onDeviceSelect }) {
     const handleDelete = async (mac) => {
         if (window.confirm('Are you sure you want to delete this device?')) {
             try {
+                const token = localStorage.getItem('token');  // Retrieve the token from localStorage
                 const response = await fetch(`http://localhost:5000/api/devices/${mac}`, {
-                    method: 'DELETE'
+                    method: 'DELETE',
+                    headers: {
+                        Authorization: `Bearer ${token}`,  // Add the token to the headers
+                    },
                 });
                 if (response.ok) {
+
                     fetchDevices();
                 } else {
                     alert('Error deleting device');

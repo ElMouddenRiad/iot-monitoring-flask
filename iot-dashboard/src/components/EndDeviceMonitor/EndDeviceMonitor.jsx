@@ -14,10 +14,16 @@ function EndDeviceMonitor() {
         const fetchEndDevices = async () => {
             setLoading(true);
             try {
-                const response = await fetch('http://localhost:5000/api/end-devices');
+                const token = localStorage.getItem('token');
+                const response = await fetch('http://localhost:5000/api/end-devices', {
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                    },
+                });
                 if (response.ok) {
                     const data = await response.json();
                     setEndDevices(data);
+
                 }
             } catch (error) {
                 console.error('Error fetching end devices:', error);
@@ -38,9 +44,15 @@ function EndDeviceMonitor() {
             if (!selectedDevice) return;
             setLoading(true);
             try {
-                const response = await fetch(`http://localhost:5000/api/end-devices/metrics/${selectedDevice.mac}`);
+                const token = localStorage.getItem('token');
+                const response = await fetch(`http://localhost:5000/api/end-devices/metrics/${selectedDevice.mac}`, {
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                    },
+                });
                 if (response.ok) {
                     const data = await response.json();
+
                     setMetrics(data);
                 }
             } catch (error) {

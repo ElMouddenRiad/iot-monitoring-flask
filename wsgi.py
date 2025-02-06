@@ -16,12 +16,18 @@ from flask_jwt_extended import JWTManager
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 
+# Fallback in-memory storage for revoked tokens
+revoked_tokens = set()
 # Callback to check if a token is revoked
 @jwt.token_in_blocklist_loader
 def check_if_token_revoked(jwt_header, jwt_payload):
     jti = jwt_payload["jti"]
-    token = redis_client.get(f"token_{jti}")
-    return token is None  # If token not found in Redis, it's revoked
+    if redis_client:
+        token = redis_client.get(f"token_{jti}")
+        return token is None  # If token not found in Redis, it's revoked
+    else:
+        # Fallback to in-memory storage
+        return jti in revoked_tokens
 
 # Handle revoked token response
 @jwt.revoked_token_loader
@@ -59,6 +65,8 @@ def create_app():
     redis_client = init_redis(app)
     if redis_client:
         auth_bp.redis_client = redis_client
+    else:
+        logging.error("Failed to initialize Redis client")
 
     # Register blueprints
     app.register_blueprint(auth_bp, url_prefix='/auth')

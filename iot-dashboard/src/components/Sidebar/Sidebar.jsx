@@ -37,6 +37,7 @@ function Sidebar() {
     const token = localStorage.getItem('token');
     if (token) {
       try {
+        
         const response = await fetch('http://localhost:5000/auth/logout', {
           method: 'POST',
           headers: {

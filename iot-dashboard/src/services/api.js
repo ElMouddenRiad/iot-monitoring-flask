@@ -1,11 +1,11 @@
 import axios from 'axios';
 
 const API_BASE_URL = 'http://localhost:5000';
+const token = localStorage.getItem('token');
 
 export const deviceService = {
     getDevices: async () => {
         try {
-            const token = localStorage.getItem('token');  // Retrieve the token from localStorage
             const response = await axios.get(`${API_BASE_URL}/api/devices`, {
                 headers: {
                     Authorization: `Bearer ${token}`,
@@ -16,7 +16,6 @@ export const deviceService = {
             console.error('Error fetching devices:', error);
             return {};
         }
-
     },
 
     addDevice: async (deviceData) => {
@@ -54,7 +53,6 @@ export const deviceService = {
 
     getStats: async () => {
         try {
-            const token = localStorage.getItem('token');  // Retrieve the token from localStorage
             const response = await axios.get(`${API_BASE_URL}/api/stats`, {
                 headers: {
                     Authorization: `Bearer ${token}`,
@@ -62,7 +60,6 @@ export const deviceService = {
             });
             return response.data;
         } catch (error) {
-
             console.error('Error fetching stats:', error);
             return null;
         }
@@ -70,7 +67,6 @@ export const deviceService = {
 
     getRecentReadings: async () => {
         try {
-            const token = localStorage.getItem('token');  // Retrieve the token from localStorage
             const response = await axios.get(`${API_BASE_URL}/api/readings/recent`, {
                 headers: {
                     Authorization: `Bearer ${token}`,
@@ -78,7 +74,6 @@ export const deviceService = {
             });
             return response.data;
         } catch (error) {
-
             console.error('Error fetching recent readings:', error);
             return [];
         }

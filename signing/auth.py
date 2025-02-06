@@ -15,7 +15,6 @@ auth_bp = Blueprint('auth', __name__)
 jwt = JWTManager()
 
 def init_redis(app):
-
     try:
         redis_url = urlparse(app.config['REDIS_URL'])
         redis_client = Redis(
@@ -26,9 +25,10 @@ def init_redis(app):
             decode_responses=True
         )
         redis_client.ping()  # Test connection
+        logging.info("Redis connection successful")
         return redis_client
     except Exception as e:
-        print(f"Warning: Redis connection failed ({str(e)}). Some features may be limited.")
+        logging.error(f"Redis connection failed: {e}")
         return None
 
 # Initialize Redis after app creation
@@ -79,7 +79,8 @@ def login():
         logging.error("Password check failed")
         return jsonify({"error": "Invalid credentials"}), 401
 
-    access_token = create_access_token(identity=user.id)
+    # Ensure identity is a string
+    access_token = create_access_token(identity=str(user.id))  # Convert user.id to string
     return jsonify({"access_token": access_token}), 200
 
 @auth_bp.route('/logout', methods=['POST'])

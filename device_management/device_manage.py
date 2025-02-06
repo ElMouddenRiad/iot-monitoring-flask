@@ -1,7 +1,7 @@
 import time
 from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
-from flask_jwt_extended import JWTManager, jwt_required
+from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity
 from flask import Blueprint, jsonify, request
 from .dal.dal import DeviceDAL
 from .models import Device  # Import Device from models
@@ -289,6 +289,8 @@ def delete_device(mac):
 def get_stats():
     db_session = SessionLocal()  # Create a new session for SQLAlchemy
     try:
+        current_user = get_jwt_identity()
+        logging.info(f"Fetching stats for user: {current_user}")
         # Get device stats from PostgreSQL
         devices = db_session.query(Device).all()
         total_devices = len(devices)
@@ -332,10 +334,11 @@ def get_stats():
 @device_bp.route('/readings/recent', methods=['GET'])
 @jwt_required()
 def get_recent_readings():
+    device_id = request.args.get('device_id')
     try:
         # Get last 50 readings from MongoDB
         readings = list(readings_collection.find(
-            {},
+            {'device_id': device_id},
             {'_id': 0}
         ).sort('timestamp', -1).limit(50))
         

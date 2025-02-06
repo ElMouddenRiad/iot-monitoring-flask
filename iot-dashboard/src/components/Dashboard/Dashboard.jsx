@@ -9,6 +9,7 @@ import DeviceModal from '../DeviceModal/DeviceModal';
 import { deviceService } from '../../services/api';
 import { io } from 'socket.io-client';
 import useAuth from '../../hooks/useAuth';
+import { Navigate } from 'react-router-dom';
 const socket = io('http://localhost:5000', {
     transports: ['websocket', 'polling'],
     reconnection: true,
@@ -38,13 +39,29 @@ function Dashboard() {
 
     const fetchStats = async () => {
         try {
-            const response = await fetch(`${API_BASE_URL}/api/stats`);
+            const token = localStorage.getItem('token');    
+            if (!token) {
+                Navigate('/login');
+                return;
+            }
+            const response = await fetch(`${API_BASE_URL}/api/stats`, {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+            });
             if (!response.ok) {
+                if (response.status === 401) {
+                    localStorage.removeItem('token');
+                    Navigate('/login');
+                    return;
+                }
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
             const statsData = await response.json();
             console.log('Fetched stats:', statsData);
             setStats(statsData);
+
+
         } catch (error) {
             console.error('Error fetching stats:', error);
             setStats(null);
@@ -126,9 +143,25 @@ function Dashboard() {
 
     const loadDevices = async () => {
         try {
-            const response = await fetch(`${API_BASE_URL}/api/devices`);
+            const token = localStorage.getItem('token');
+            if (!token) {
+                Navigate('/login');
+                return;
+            }
+    
+            const response = await fetch(`${API_BASE_URL}/api/devices`, {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+            });
             if (!response.ok) {
+                if (response.status === 401) {
+                    localStorage.removeItem('token');
+                    Navigate('/login');
+                    return;
+                }
                 throw new Error(`HTTP error! status: ${response.status}`);
+
             }
             const devicesData = await response.json();
             console.log('Loaded devices:', devicesData);
@@ -177,10 +210,11 @@ function Dashboard() {
                 IoT Dashboard
             </Typography>
             <Grid container spacing={3}>
-            <Grid item xs={12} md={'100%'}>
+            <Grid item xs={12} md={12}>
                     <Paper className="paper">
                         <Statistics stats={stats} />
                     </Paper>
+
             </Grid>
                 <Grid item xs={12} md={4}>
                     <Paper className="paper">
