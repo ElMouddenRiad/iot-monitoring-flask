@@ -14,6 +14,7 @@ import DashboardIcon from '@mui/icons-material/Dashboard';
 import DevicesIcon from '@mui/icons-material/Devices';
 import ExitToAppIcon from '@mui/icons-material/ExitToApp';
 
+
 const drawerWidth = 240;
 
 function Sidebar() {
@@ -30,8 +31,14 @@ function Sidebar() {
       text: 'Device Monitor',
       icon: <DevicesIcon />,
       path: '/device-monitor'
+    },
+    {
+      text: 'Prediction',
+      icon: <DashboardIcon />,
+      path: '/prediction'
     }
   ];
+
 
   const handleLogout = async () => {
     const token = localStorage.getItem('token');

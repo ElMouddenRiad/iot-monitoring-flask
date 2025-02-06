@@ -3,11 +3,14 @@
     background-color: #1a1a1a;
     border-radius: 8px;
     height: 100%;
+    width: 100%;
 }
 
 .device-list-header {
     margin-bottom: 20px;
+    width: 100%;
 }
+
 
 .MuiListItem-root {
     margin-bottom: 8px;

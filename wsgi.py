@@ -12,9 +12,18 @@ from device_management.models import init_test_devices
 from device_management.device_manage import test_rabbitmq_connection
 import logging
 from flask_jwt_extended import JWTManager
+from predictions.prediction_module import train_model, make_prediction, prediction_bp
+import pandas as pd
+import openmeteo_requests as openmeteo
+import requests_cache
+from retry_requests import retry
+from device_management.device_manage import DeviceDAL
 
+
+OPENMETEO_URL = "https://api.open-meteo.com/v1/forecast"
 # Set up logging
 logging.basicConfig(level=logging.INFO)
+
 
 # Fallback in-memory storage for revoked tokens
 revoked_tokens = set()
@@ -28,7 +37,7 @@ def check_if_token_revoked(jwt_header, jwt_payload):
     else:
         # Fallback to in-memory storage
         return jti in revoked_tokens
-
+    
 # Handle revoked token response
 @jwt.revoked_token_loader
 def revoked_token_callback(jwt_header, jwt_payload):
@@ -71,6 +80,7 @@ def create_app():
     # Register blueprints
     app.register_blueprint(auth_bp, url_prefix='/auth')
     app.register_blueprint(device_bp, url_prefix='/api')
+    app.register_blueprint(prediction_bp, url_prefix='/prediction')
 
     # Initialize database and test data
     with app.app_context():
@@ -81,8 +91,12 @@ def create_app():
 
         # Test RabbitMQ connection
         test_rabbitmq_connection()
+    
+    
 
     return app
+
+
 
 if __name__ == '__main__':
     app = create_app()

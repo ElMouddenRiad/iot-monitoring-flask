@@ -21,4 +21,4 @@ ENV FLASK_APP=end_device.py
 ENV FLASK_ENV=development
 
 # Run the application
-CMD ["gunicorn", "--bind", "0.0.0.0:5003", "end_device:app"]
+CMD ["python", "end_device.py"]

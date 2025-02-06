@@ -1,8 +1,10 @@
-Flask==2.0.1
-Flask-SQLAlchemy==2.5.1
-psycopg2-binary==2.9.1
-pika==1.2.0
-python-dotenv==0.19.0
+Flask
+Flask-SQLAlchemy
+SQLAlchemy
+Flask-Cors
+psycopg2-binary
+pika
+python-dotenv
 sqlalchemy-utils==0.38.0
 python-jose[cryptography]==3.3.0
 pyjwt==2.4.0
@@ -13,13 +15,13 @@ eventlet==0.33.3
 Flask-SocketIO==5.1.1
 cryptography==41.0.1
 Werkzeug==2.0.3
-itsdangerous==2.0.1
+itsdangerous==2.1.2
 click==8.0.4
 # Development packages
-black==22.3.0  # Code formatter
-flake8==4.0.1  # Code linter
-pytest==7.1.1  # Testing framework
-python-dotenv==0.19.0  # Environment variable management
+black==22.3.0
+flake8==4.0.1
+pytest==7.1.1
 gunicorn==20.1.0
+
 requests==2.25.1
-flask-jwt-extended==4.4.4
+Flask-JWT-Extended==4.4.4

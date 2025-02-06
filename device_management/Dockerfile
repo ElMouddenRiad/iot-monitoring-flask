@@ -23,4 +23,4 @@ ENV FLASK_ENV=development
 
 
 # Run the application
-CMD ["gunicorn", "--bind", "0.0.0.0:5001", "device_manage:app"]
+CMD ["python", "device_manage.py"]

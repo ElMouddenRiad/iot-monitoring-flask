@@ -80,8 +80,8 @@ def login():
         return jsonify({"error": "Invalid credentials"}), 401
 
     # Ensure identity is a string
-    access_token = create_access_token(identity=str(user.id))  # Convert user.id to string
-    return jsonify({"access_token": access_token}), 200
+    access_token = create_access_token(identity=username)
+    return jsonify(access_token=access_token), 200
 
 @auth_bp.route('/logout', methods=['POST'])
 @jwt_required()

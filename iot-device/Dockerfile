@@ -21,4 +21,4 @@ ENV FLASK_APP=iot.py
 ENV FLASK_ENV=development
 
 # Run the application
-CMD ["gunicorn", "--bind", "0.0.0.0:5002", "iot:app"]
+CMD ["python", "iot.py"]

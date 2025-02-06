@@ -66,15 +66,11 @@ function DeviceList({ onDeviceSelect }) {
 
     const fetchDevices = async () => {
         try {
-            const token = localStorage.getItem('token');  // Retrieve the token from localStorage
-            const response = await fetch('http://localhost:5000/api/devices', {
-                headers: {
-                    Authorization: `Bearer ${token}`,  // Add the token to the headers
-                },
-            });
+            const response = await fetch('http://localhost:5000/api/devices');
             if (!response.ok) {
                 throw new Error('Failed to fetch devices');
             }
+
             const data = await response.json();
             setDevices(Array.isArray(data) ? data : []);
         } catch (error) {
@@ -123,14 +119,11 @@ function DeviceList({ onDeviceSelect }) {
     const handleDelete = async (mac) => {
         if (window.confirm('Are you sure you want to delete this device?')) {
             try {
-                const token = localStorage.getItem('token');  // Retrieve the token from localStorage
                 const response = await fetch(`http://localhost:5000/api/devices/${mac}`, {
                     method: 'DELETE',
-                    headers: {
-                        Authorization: `Bearer ${token}`,  // Add the token to the headers
-                    },
                 });
                 if (response.ok) {
+                    fetchDevices();
 
                     fetchDevices();
                 } else {
@@ -180,7 +173,7 @@ function DeviceList({ onDeviceSelect }) {
     );
 
     return (
-        <Box className="device-list">
+        <Box className="device-list" sx={{ width: '100%' }}>
             <Box className="device-list-header" sx={{ mb: 2, display: 'flex', gap: 2 }}>
                 <TextField
                     placeholder="Search devices..."

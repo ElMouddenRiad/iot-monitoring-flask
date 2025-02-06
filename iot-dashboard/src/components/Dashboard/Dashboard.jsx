@@ -8,8 +8,7 @@ import Statistics from '../Statistics/Statistics';
 import DeviceModal from '../DeviceModal/DeviceModal';
 import { deviceService } from '../../services/api';
 import { io } from 'socket.io-client';
-import useAuth from '../../hooks/useAuth';
-import { Navigate } from 'react-router-dom';
+
 const socket = io('http://localhost:5000', {
     transports: ['websocket', 'polling'],
     reconnection: true,
@@ -34,52 +33,16 @@ function Dashboard() {
     const [editingDevice, setEditingDevice] = useState(null);
     const [temperatureData, setTemperatureData] = useState([]);
     const [stats, setStats] = useState(null);
-    
-    useAuth(); // Ensure user is authenticated
 
     const fetchStats = async () => {
         try {
-            const token = localStorage.getItem('token');    
-            if (!token) {
-                Navigate('/login');
-                return;
-            }
-            
-            // Add validation for required fields
-            if (!selectedDevice) {
-                console.warn('No device selected');
-                return;
-            }
-
-            const response = await fetch(`${API_BASE_URL}/api/stats`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify({
-                    device_id: selectedDevice
-                })
-            });
-
+            const response = await fetch(`${API_BASE_URL}/api/stats`);
             if (!response.ok) {
-                if (response.status === 401) {
-                    localStorage.removeItem('token');
-                    Navigate('/login');
-                    return;
-                }
-                if (response.status === 422) {
-                    const errorData = await response.json();
-                    console.error('Validation error:', errorData);
-                    return;
-                }
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
-
             const statsData = await response.json();
             console.log('Fetched stats:', statsData);
             setStats(statsData);
-
         } catch (error) {
             console.error('Error fetching stats:', error);
             setStats(null);
@@ -118,18 +81,9 @@ function Dashboard() {
 
         socket.on('new_reading', (reading) => {
             console.log('New temperature reading received:', reading);
-            // Validate reading data
-            if (!reading || !reading.device_id || !reading.temperature || !reading.timestamp) {
-                console.error('Invalid reading data:', reading);
-                return;
-            }
-            
             setTemperatureData(prevData => {
-                const newData = [...prevData, {
-                    ...reading,
-                    timestamp: new Date(reading.timestamp),
-                    temperature: parseFloat(reading.temperature)
-                }];
+                const newData = [...prevData, reading];
+                // Keep only last 50 readings
                 return newData.slice(-50);
             });
             updateData(reading); 
@@ -170,25 +124,9 @@ function Dashboard() {
 
     const loadDevices = async () => {
         try {
-            const token = localStorage.getItem('token');
-            if (!token) {
-                Navigate('/login');
-                return;
-            }
-    
-            const response = await fetch(`${API_BASE_URL}/api/devices`, {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                },
-            });
+            const response = await fetch(`${API_BASE_URL}/api/devices`);
             if (!response.ok) {
-                if (response.status === 401) {
-                    localStorage.removeItem('token');
-                    Navigate('/login');
-                    return;
-                }
                 throw new Error(`HTTP error! status: ${response.status}`);
-
             }
             const devicesData = await response.json();
             console.log('Loaded devices:', devicesData);
@@ -241,7 +179,6 @@ function Dashboard() {
                     <Paper className="paper">
                         <Statistics stats={stats} />
                     </Paper>
-
             </Grid>
                 <Grid item xs={12} md={4}>
                     <Paper className="paper">
