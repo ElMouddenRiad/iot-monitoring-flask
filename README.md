@@ -180,10 +180,6 @@ Cloud-IOT-Project/
 
 Cloud-IOT-Project is a Flask + React IoT platform for device management, real-time monitoring, and environmental prediction.
 
-### What `wsgi.py` is for
-
-`wsgi.py` exposes the Flask application in a production-friendly way. It is used by WSGI servers to start the backend without relying on the development entrypoint in `app.py`.
-
 ### Short setup
 
 1. Create the Python virtual environment and install backend dependencies.
@@ -198,12 +194,14 @@ Cloud-IOT-Project is a Flask + React IoT platform for device management, real-ti
 - MQTT, RabbitMQ, MongoDB, and Socket.IO integration
 - reusable WSGI deployment entrypoint
 
-## Points à poursuivre si besoin
+## Statut de finalisation
 
-- modulariser davantage `device_management/device_manage.py`
-- durcir la validation des entrées API
-- ajouter des tests automatisés
-- standardiser encore les logs et les codes d'erreur
+Le projet est désormais préparé comme une version finalisée pour publication publique et présentation professionnelle.
+
+- documentation unifiée et clarifiée
+- artefacts locaux et fichiers inutiles exclus
+- point d'entrée WSGI documenté pour le déploiement
+- base de code nettoyée pour un dépôt GitHub plus lisible
 
 ## Licence
 
