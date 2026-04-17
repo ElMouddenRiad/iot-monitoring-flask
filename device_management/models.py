@@ -1,5 +1,10 @@
-from extensions import db
 import json
+import logging
+
+from extensions import db
+
+
+logger = logging.getLogger(__name__)
 
 class Device(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -53,7 +58,7 @@ def init_test_devices(app):
             
             try:
                 db.session.commit()
-                print("Test devices initialized successfully")
+                logger.info("Test devices initialized successfully")
             except Exception as e:
                 db.session.rollback()
-                print(f"Error initializing test devices: {e}") 
+                logger.exception("Error initializing test devices: %s", e)

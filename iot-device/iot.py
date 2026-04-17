@@ -7,18 +7,19 @@ from datetime import datetime, timedelta
 import json
 import logging
 import psycopg2
+import os
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 # Configuration
 CONFIG = {
-    'MQTT_BROKER': "test.mosquitto.org",
-    'MQTT_PORT': 1883,
-    'MQTT_TOPIC': "iot/temp",
+    'MQTT_BROKER': os.getenv('MQTT_BROKER_URL', "test.mosquitto.org"),
+    'MQTT_PORT': int(os.getenv('MQTT_BROKER_PORT', '1883')),
+    'MQTT_TOPIC': os.getenv('MQTT_TOPIC', "iot/temp"),
     'MQTT_QOS': 1,
     'RECONNECT_DELAY': 5,
     'MAX_RETRIES': 3,
-    'DB_URL': 'postgresql://admin:admin123@localhost:5432/iot_platform'
+    'DB_URL': os.getenv('DATABASE_URL', 'sqlite:///iot_platform.db')
 }
 
 # Setup logging

@@ -4,16 +4,31 @@ import json
 import logging
 import random
 import time
+import os
 from threading import Thread
 from concurrent.futures import ThreadPoolExecutor
+
+
+logger = logging.getLogger(__name__)
+
+
+def _build_rabbitmq_parameters():
+    rabbitmq_url = os.getenv("RABBITMQ_URL")
+    if rabbitmq_url:
+        return pika.URLParameters(rabbitmq_url)
+
+    host = os.getenv("RABBITMQ_HOST", "localhost")
+    port = os.getenv("RABBITMQ_PORT", "5672")
+    username = os.getenv("RABBITMQ_USERNAME", "guest")
+    password = os.getenv("RABBITMQ_PASSWORD", "guest")
+    return pika.URLParameters(f"amqp://{username}:{password}@{host}:{port}/%2F")
 
 class DeviceEventPublisher:
     def __init__(self):
         try:
-            # Use 127.0.0.1 since it works
-            self.parameters = pika.URLParameters('amqp://guest:guest@127.0.0.1:5672/%2F')
-            
-            print("Attempting to connect to RabbitMQ...")
+            self.parameters = _build_rabbitmq_parameters()
+
+            logger.info("Attempting to connect to RabbitMQ")
             self.connection = pika.BlockingConnection(self.parameters)
             self.channel = self.connection.channel()
             
@@ -23,10 +38,10 @@ class DeviceEventPublisher:
                 exchange_type='topic',
                 durable=True
             )
-            print("Successfully connected to RabbitMQ")
+            logger.info("Successfully connected to RabbitMQ")
             
         except Exception as e:
-            print(f"Error initializing RabbitMQ connection: {type(e).__name__} - {e}")
+            logger.exception("Error initializing RabbitMQ connection: %s", e)
 
     def connect(self):
         try:
@@ -39,7 +54,7 @@ class DeviceEventPublisher:
             )
             return connection, channel
         except Exception as e:
-            logging.error(f"Failed to connect to RabbitMQ: {e}")
+            logger.error("Failed to connect to RabbitMQ: %s", e)
             return None, None
 
     def publish_temperature(self, device, temperature):
@@ -84,11 +99,11 @@ class DeviceEventPublisher:
                 )
             )
             
-            print(f"Published temperature {temperature} for device {device['mac']}")
+            logger.info("Published temperature %s for device %s", temperature, device['mac'])
             connection.close()
             
         except Exception as e:
-            print(f"Error publishing temperature: {e}")
+            logger.exception("Error publishing temperature: %s", e)
 
     def simulate_device_readings(self, device_data):
         try:
@@ -100,10 +115,14 @@ class DeviceEventPublisher:
                 frequency = int(device_data.get('frequency', 30))
             except (TypeError, ValueError):
                 frequency = 30
-                print(f"Invalid frequency for device {device_data.get('mac')}, using default {frequency}")
+                logger.warning(
+                    "Invalid frequency for device %s, using default %s",
+                    device_data.get('mac'),
+                    frequency,
+                )
 
             device_id = device_data.get('mac', 'unknown')
-            print(f"Starting simulation for device {device_id} with frequency {frequency}s")
+            logger.info("Starting simulation for device %s with frequency %ss", device_id, frequency)
 
             # Create a dedicated connection for this device
             device_connection = pika.BlockingConnection(self.parameters)
@@ -136,7 +155,7 @@ class DeviceEventPublisher:
                                 'longitude': float(location['longitude'])
                             }
                         except Exception as e:
-                            print(f"Error parsing location for device {device_id}: {e}")
+                            logger.warning("Error parsing location for device %s: %s", device_id, e)
                             # Use latitude/longitude directly if available
                             if device_data.get('latitude') and device_data.get('longitude'):
                                 reading['location'] = {
@@ -155,20 +174,20 @@ class DeviceEventPublisher:
                         )
                     )
                     
-                    print(f"Published reading for device {device_id}: {temperature}°C")
+                    logger.debug("Published reading for device %s: %s°C", device_id, temperature)
                     time.sleep(frequency)
                     
                 except pika.exceptions.AMQPConnectionError:
-                    print(f"Connection lost for device {device_id}. Reconnecting...")
+                    logger.warning("Connection lost for device %s. Reconnecting...", device_id)
                     device_connection = pika.BlockingConnection(self.parameters)
                     device_channel = device_connection.channel()
                     time.sleep(5)
                 except Exception as e:
-                    print(f"Error in simulation for device {device_id}: {type(e).__name__} - {e}")
+                    logger.exception("Error in simulation for device %s: %s", device_id, e)
                     time.sleep(5)
                 
         except Exception as e:
-            print(f"Fatal error in device simulation: {type(e).__name__} - {e}")
+            logger.exception("Fatal error in device simulation: %s", e)
         finally:
             if 'device_connection' in locals() and device_connection.is_open:
                 device_connection.close()
@@ -184,15 +203,15 @@ class DeviceEventPublisher:
                     daemon=True
                 )
                 thread.start()
-                print(f"Started simulation thread for device {device.get('mac')}")
+                logger.info("Started simulation thread for device %s", device.get('mac'))
 
     def __del__(self):
         try:
             if hasattr(self, 'connection') and self.connection and self.connection.is_open:
                 self.connection.close()
-                print("RabbitMQ connection closed")
+                logger.info("RabbitMQ connection closed")
         except Exception as e:
-            print(f"Error closing connection: {e}")
+            logger.exception("Error closing connection: %s", e)
 
 # Update device_manage.py to use this service
 def start_device_simulations(devices):
@@ -206,9 +225,9 @@ def start_device_simulations(devices):
 
 # Test connection
 try:
-    params = pika.URLParameters('amqp://guest:guest@127.0.0.1:5672/%2F')
+    params = _build_rabbitmq_parameters()
     connection = pika.BlockingConnection(params)
-    print("Successfully connected to RabbitMQ")
+    logger.info("Successfully connected to RabbitMQ")
     connection.close()
 except Exception as e:
-    print(f"Failed to connect: {e}")
+    logger.exception("Failed to connect: %s", e)

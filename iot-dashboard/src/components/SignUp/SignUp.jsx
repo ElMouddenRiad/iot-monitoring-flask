@@ -15,6 +15,8 @@ import {
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import './SignUp.css';
 
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000';
+
 function SignUp() {
     const navigate = useNavigate();
     const [formData, setFormData] = useState({
@@ -46,7 +48,7 @@ function SignUp() {
         setLoading(true);
 
         try {
-            const response = await fetch('http://localhost:5000/auth/register', {
+            const response = await fetch(`${API_BASE_URL}/auth/register`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'

@@ -5,3 +5,19 @@ node_modules
 .pnp.js
 **/node_modules
 
+# Python local environments and caches
+venv/
+.venv/
+__pycache__/
+**/__pycache__/
+.pytest_cache/
+.mypy_cache/
+.cache/
+
+# Local environment files
+.env
+.env.*
+
+# Logs
+*.log
+

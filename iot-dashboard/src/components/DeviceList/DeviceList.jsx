@@ -24,6 +24,8 @@ import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import './DeviceList.css';
 
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000';
+
 // Fix for default marker icon
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -66,11 +68,15 @@ function DeviceList({ onDeviceSelect }) {
 
     const fetchDevices = async () => {
         try {
-            const response = await fetch('http://localhost:5000/api/devices');
+            const token = localStorage.getItem('token');  // Retrieve the token from localStorage
+            const response = await fetch(`${API_BASE_URL}/api/devices`, {
+                headers: {
+                    Authorization: `Bearer ${token}`,  // Add the token to the headers
+                },
+            });
             if (!response.ok) {
                 throw new Error('Failed to fetch devices');
             }
-
             const data = await response.json();
             setDevices(Array.isArray(data) ? data : []);
         } catch (error) {
@@ -89,8 +95,8 @@ function DeviceList({ onDeviceSelect }) {
 
         try {
             const url = selectedDevice 
-                ? `http://localhost:5000/api/devices/${selectedDevice.mac}`
-                : 'http://localhost:5000/api/devices';
+                ? `${API_BASE_URL}/api/devices/${selectedDevice.mac}`
+                : `${API_BASE_URL}/api/devices`;
             
             const method = selectedDevice ? 'PUT' : 'POST';
             
@@ -119,11 +125,14 @@ function DeviceList({ onDeviceSelect }) {
     const handleDelete = async (mac) => {
         if (window.confirm('Are you sure you want to delete this device?')) {
             try {
-                const response = await fetch(`http://localhost:5000/api/devices/${mac}`, {
+                const token = localStorage.getItem('token');  // Retrieve the token from localStorage
+                const response = await fetch(`${API_BASE_URL}/api/devices/${mac}`, {
                     method: 'DELETE',
+                    headers: {
+                        Authorization: `Bearer ${token}`,  // Add the token to the headers
+                    },
                 });
                 if (response.ok) {
-                    fetchDevices();
 
                     fetchDevices();
                 } else {
@@ -173,7 +182,7 @@ function DeviceList({ onDeviceSelect }) {
     );
 
     return (
-        <Box className="device-list" sx={{ width: '100%' }}>
+        <Box className="device-list">
             <Box className="device-list-header" sx={{ mb: 2, display: 'flex', gap: 2 }}>
                 <TextField
                     placeholder="Search devices..."

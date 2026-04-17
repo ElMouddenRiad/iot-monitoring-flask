@@ -1,27 +1,39 @@
-import paho.mqtt.client as paho_mqtt
 import json
-import threading
+import logging
+
+import paho.mqtt.client as paho_mqtt
+
 from monitoring.monitor import store_temperature_reading
+
+
+logger = logging.getLogger(__name__)
 
 def on_connect(client, userdata, flags, rc):
     app = userdata
     if rc == 0:
-        print(f"Connected to MQTT Broker!")
+        logger.info("Connected to MQTT broker")
         client.subscribe(app.config['MQTT_TOPIC'])
     else:
-        print(f"Failed to connect, return code {rc}")
+        logger.warning("Failed to connect to MQTT broker: rc=%s", rc)
 
 def on_message(client, userdata, msg):
     try:
-        if msg.payload.decode() == "Offline":
+        raw_payload = msg.payload.decode(errors="replace")
+        if raw_payload == "Offline":
             return
-        payload = json.loads(msg.payload.decode())
-        print(f"Received `{payload}` from `{msg.topic}` topic")
+        payload = json.loads(raw_payload)
+        logger.debug("Received MQTT payload from %s: %s", msg.topic, payload)
         store_temperature_reading(payload)
+    except json.JSONDecodeError as exc:
+        logger.warning("Invalid JSON payload received on %s: %s", msg.topic, exc)
     except Exception as e:
-        print(f"Error processing message: {e}")
+        logger.exception("Error processing MQTT message: %s", e)
 
 def start_mqtt_client(app):
+    if not app.config.get('ENABLE_MQTT_CLIENT', False):
+        logger.info("MQTT client disabled by configuration")
+        return None
+
     client = paho_mqtt.Client(
         client_id=app.config['MQTT_CLIENT_ID'], 
         clean_session=True,
@@ -37,5 +49,7 @@ def start_mqtt_client(app):
     try:
         client.connect(app.config['MQTT_BROKER_URL'], app.config['MQTT_BROKER_PORT'], keepalive=30)
         client.loop_start()
+        return client
     except Exception as e:
-        print(f"Error connecting to MQTT broker: {e}") 
+        logger.exception("Error connecting to MQTT broker: %s", e)
+        return None

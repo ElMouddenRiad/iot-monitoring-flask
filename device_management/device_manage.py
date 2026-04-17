@@ -4,13 +4,11 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity
 from flask import Blueprint, jsonify, request
 from .dal.dal import DeviceDAL
-from .models import Device  # Import Device from models
 import pika
 import json
 from datetime import datetime
-from extensions import db  # Move db to extensions.py
+from extensions import db, socketio  # Move shared extensions to extensions.py
 from pymongo import MongoClient
-import socketio
 import logging
 from sqlalchemy import create_engine, Column, String, DateTime, Float, Integer, Text
 from sqlalchemy.orm import sessionmaker
@@ -20,16 +18,18 @@ import os
 from eventlet.db_pool import ConnectionPool
 from eventlet import spawn_n
 
+
+logger = logging.getLogger(__name__)
+
 device_bp = Blueprint('device_bp', __name__)
-RABBITMQ_HOST = 'localhost'
 # MongoDB configuration
-mongo_client = MongoClient('mongodb+srv://bakr:bakr1234@iotproject.dl598.mongodb.net/?retryWrites=true&w=majority&appName=IotProject')
-db = mongo_client['iot_platform']
-readings_collection = db['temperature_readings']
-end_device_collection = db['end_device_metrics']
+mongo_client = MongoClient(os.getenv('MONGODB_URI', 'mongodb://localhost:27017/iot_platform'))
+mongo_db = mongo_client[os.getenv('MONGODB_DATABASE', 'iot_platform')]
+readings_collection = mongo_db['temperature_readings']
+end_device_collection = mongo_db['end_device_metrics']
 
 # Database configuration
-DATABASE_URL = 'postgresql://admin:admin123@localhost:5432/iot_platform'
+DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///iot_platform.db')
 engine = create_engine(
     DATABASE_URL,
     pool_size=10,
@@ -79,41 +79,47 @@ Base.metadata.create_all(bind=engine)
 # RabbitMQ connection (using docker-compose service name)
 def get_rabbitmq_connection():
     try:
-        # Use 'rabbitmq' if running in Docker, otherwise 'localhost'
-        host = 'rabbitmq' if os.getenv('DOCKER_ENV') else 'localhost'
-        
-        credentials = pika.PlainCredentials('guest', 'guest')
+        host = os.getenv('RABBITMQ_HOST', 'rabbitmq' if os.getenv('DOCKER_ENV') else 'localhost')
+        port = int(os.getenv('RABBITMQ_PORT', '5672'))
+        credentials = pika.PlainCredentials(
+            os.getenv('RABBITMQ_USERNAME', 'guest'),
+            os.getenv('RABBITMQ_PASSWORD', 'guest')
+        )
         parameters = pika.ConnectionParameters(
             host=host,
-            port=5672,
+            port=port,
             credentials=credentials
         )
         connection = pika.BlockingConnection(parameters)
         return connection
     except Exception as e:
-        print(f"Failed to connect to RabbitMQ: {e}")
+        logger.exception("Failed to connect to RabbitMQ: %s", e)
         return None
 
 def test_rabbitmq_connection():
-    connection_urls = [
-        'amqp://guest:guest@127.0.0.1:5672/%2F',
-        'amqp://guest:guest@0.0.0.0:5672/%2F',
-        'amqp://guest:guest@172.17.0.2:5672/%2F'
+    username = os.getenv('RABBITMQ_USERNAME', 'guest')
+    password = os.getenv('RABBITMQ_PASSWORD', 'guest')
+    port = os.getenv('RABBITMQ_PORT', '5672')
+    hosts = [
+        os.getenv('RABBITMQ_HOST', 'rabbitmq' if os.getenv('DOCKER_ENV') else 'localhost'),
+        '127.0.0.1',
+        '0.0.0.0',
     ]
+    connection_urls = [f'amqp://{username}:{password}@{host}:{port}/%2F' for host in hosts]
     
     for url in connection_urls:
         try:
-            print(f"Testing connection to {url}")
+            logger.info("Testing connection to RabbitMQ endpoint %s", url)
             params = pika.URLParameters(url)
             connection = pika.BlockingConnection(params)
-            print(f"Successfully connected to RabbitMQ using {url}")
+            logger.info("Successfully connected to RabbitMQ using %s", url)
             connection.close()
             return True
         except Exception as e:
-            print(f"Failed to connect using {url}: {e}")
+            logger.warning("Failed to connect using %s: %s", url, e)
             continue
     
-    print("Failed to connect to RabbitMQ using any available URLs")
+    logger.error("Failed to connect to RabbitMQ using any available URL")
     return False
 
 def publish_device_event(event_type, device_data):
@@ -143,14 +149,14 @@ def publish_device_event(event_type, device_data):
                 )
             )
             connection.close()
-            logging.info(f"Published {event_type} event for device {device_data.get('mac')}")
+            logger.info("Published %s event for device %s", event_type, device_data.get('mac'))
     except Exception as e:
-        logging.error(f"Failed to publish device event: {e}")
+        logger.exception("Failed to publish device event: %s", e)
 
 def on_message(client, userdata, msg):
     try:
         payload = json.loads(msg.payload.decode())
-        print(f"Received `{payload}` from `{msg.topic}` topic")
+        logger.debug("Received %s from %s topic", payload, msg.topic)
 
         # Format the temperature reading
         reading = {
@@ -169,7 +175,7 @@ def on_message(client, userdata, msg):
         update_stats()
 
     except Exception as e:
-        print(f"Error processing message: {e}")
+        logger.exception("Error processing message: %s", e)
 
 @device_bp.route('/devices', methods=['GET'])
 def get_devices():
@@ -346,7 +352,7 @@ def get_recent_readings():
         return jsonify(formatted_readings)
         
     except Exception as e:
-        print(f"Error getting recent readings: {e}")
+        logger.exception("Error getting recent readings: %s", e)
         return jsonify({'error': str(e)}), 500
 
 def update_stats():
@@ -389,7 +395,7 @@ def update_stats():
             return stats
             
     except Exception as e:
-        print(f"Error updating stats: {e}")
+        logger.exception("Error updating stats: %s", e)
         return None
 
 @device_bp.route('/devices/start-simulation', methods=['POST'])

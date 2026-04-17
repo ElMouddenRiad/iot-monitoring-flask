@@ -7,10 +7,11 @@ import logging
 from datetime import datetime
 import time
 import json
+import os
 
 # Configuration
 CONFIG = {
-    'API_URL': 'http://localhost:5000/api',
+    'API_URL': os.getenv('API_URL', 'http://localhost:5000/api'),
     'COLLECTION_INTERVAL': 30,  # seconds
     'MAX_RETRIES': 3,
     'RETRY_DELAY': 5

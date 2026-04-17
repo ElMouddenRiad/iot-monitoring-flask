@@ -3,6 +3,8 @@ import { Grid, Paper, Typography } from '@mui/material';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import './EndDeviceMonitor.css';
 
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000';
+
 function EndDeviceMonitor() {
     const [endDevices, setEndDevices] = useState([]);
     const [selectedDevice, setSelectedDevice] = useState(null);
@@ -14,10 +16,14 @@ function EndDeviceMonitor() {
         const fetchEndDevices = async () => {
             setLoading(true);
             try {
-                const response = await fetch('http://localhost:5000/api/end-devices');
+                const token = localStorage.getItem('token');
+                const response = await fetch(`${API_BASE_URL}/api/end-devices`, {
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                    },
+                });
                 if (response.ok) {
                     const data = await response.json();
-
                     setEndDevices(data);
 
                 }
@@ -40,10 +46,14 @@ function EndDeviceMonitor() {
             if (!selectedDevice) return;
             setLoading(true);
             try {
-                const response = await fetch(`http://localhost:5000/api/end-devices/metrics/${selectedDevice.mac}`);
+                const token = localStorage.getItem('token');
+                const response = await fetch(`${API_BASE_URL}/api/end-devices/metrics/${selectedDevice.mac}`, {
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                    },
+                });
                 if (response.ok) {
                     const data = await response.json();
-
 
                     setMetrics(data);
                 }

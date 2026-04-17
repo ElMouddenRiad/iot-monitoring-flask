@@ -14,6 +14,7 @@ import DashboardIcon from '@mui/icons-material/Dashboard';
 import DevicesIcon from '@mui/icons-material/Devices';
 import ExitToAppIcon from '@mui/icons-material/ExitToApp';
 
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000';
 
 const drawerWidth = 240;
 
@@ -31,21 +32,15 @@ function Sidebar() {
       text: 'Device Monitor',
       icon: <DevicesIcon />,
       path: '/device-monitor'
-    },
-    {
-      text: 'Prediction',
-      icon: <DashboardIcon />,
-      path: '/prediction'
     }
   ];
-
 
   const handleLogout = async () => {
     const token = localStorage.getItem('token');
     if (token) {
       try {
         
-        const response = await fetch('http://localhost:5000/auth/logout', {
+        const response = await fetch(`${API_BASE_URL}/auth/logout`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

@@ -16,6 +16,8 @@ import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import axios from 'axios';
 import './SignIn.css';
 
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000';
+
 function SignIn() {
     const navigate = useNavigate();
     const [formData, setFormData] = useState({
@@ -38,7 +40,7 @@ function SignIn() {
         setLoading(true);
     
         try {
-            const response = await axios.post('http://localhost:5000/auth/login', {
+            const response = await axios.post(`${API_BASE_URL}/auth/login`, {
                 username: formData.username,
                 password: formData.password,
             });

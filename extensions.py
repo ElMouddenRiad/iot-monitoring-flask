@@ -8,10 +8,10 @@ eventlet.monkey_patch()
 db = SQLAlchemy()
 jwt = JWTManager()
 socketio = SocketIO(
-    cors_allowed_origins=["http://localhost:3000", "http://192.168.56.1:3000"],  # Add all your frontend URLs
+    cors_allowed_origins=["http://localhost:3000", "http://192.168.56.1:3000"],
     async_mode='eventlet',
-    logger=True,
-    engineio_logger=True,
+    logger=False,
+    engineio_logger=False,
     ping_timeout=60,
     ping_interval=25,
     manage_session=False,
@@ -20,8 +20,5 @@ socketio = SocketIO(
 )
 
 def init_socketio(app):
-    socketio.init_app(app, 
-        cors_allowed_origins="*",  # Allow all origins
-        async_mode='eventlet'
-    )
+    socketio.init_app(app, async_mode='eventlet')
     return socketio 
