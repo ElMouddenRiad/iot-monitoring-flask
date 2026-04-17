@@ -194,15 +194,6 @@ Cloud-IOT-Project is a Flask + React IoT platform for device management, real-ti
 - MQTT, RabbitMQ, MongoDB, and Socket.IO integration
 - reusable WSGI deployment entrypoint
 
-## Statut de finalisation
-
-Le projet est désormais préparé comme une version finalisée pour publication publique et présentation professionnelle.
-
-- documentation unifiée et clarifiée
-- artefacts locaux et fichiers inutiles exclus
-- point d'entrée WSGI documenté pour le déploiement
-- base de code nettoyée pour un dépôt GitHub plus lisible
-
 ## Licence
 
 Aucune licence n'a été ajoutée pour le moment. Ajouter une licence explicite avant publication publique si nécessaire.
