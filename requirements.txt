@@ -17,6 +17,12 @@ cryptography==41.0.1
 Werkzeug==2.0.3
 itsdangerous==2.1.2
 click==8.0.4
+bcrypt
+pandas
+pymongo
+openmeteo-requests
+requests-cache
+retry-requests
 # Development packages
 black==22.3.0
 flake8==4.0.1

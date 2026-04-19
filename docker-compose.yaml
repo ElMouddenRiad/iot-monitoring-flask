@@ -1,22 +1,4 @@
-version: '3.8'
-
 services:
-  rabbitmq:
-    image: rabbitmq:3-management
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-    environment:
-      - RABBITMQ_DEFAULT_USER=guest
-      - RABBITMQ_DEFAULT_PASS=guest
-
-  mongodb:
-    image: mongo:latest
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongodb_data:/data/db
-
   postgres:
     image: postgres:latest
     ports:
@@ -28,13 +10,8 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
-    - iot_network
-  mqtt:
-    image: eclipse-mosquitto:latest
-    ports:
-      - "1883:1883"
-    networks:
       - iot_network
+
   redis:
     image: redis:latest
     ports:
@@ -42,81 +19,132 @@ services:
     networks:
       - iot_network
 
-  main_service:
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+    networks:
+      - iot_network
+
+  mongodb:
+    image: mongo:latest
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - iot_network
+
+  mqtt:
+    image: eclipse-mosquitto:latest
+    ports:
+      - "1883:1883"
+    networks:
+      - iot_network
+
+  signing_service:
     build:
       context: ./
-      dockerfile: Dockerfile
-    ports:
-      - "5000:5000"
-    depends_on:
-      - postgres
-      - redis
-      - rabbitmq
-      - mqtt
-      - mongodb
-      - iot_device
-      - end_device
-      - device_management
-
-  device_management:
-    build: 
-      context: ./device_management
-      dockerfile: Dockerfile
-    container_name: device_management
+      dockerfile: microservices/signing/Dockerfile
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-admin}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: 5432
-      POSTGRES_DB: iot_platform
-    ports:
-      - "5001:5001"
+      - PORT=5001
+      - DATABASE_URL=postgresql://admin:${POSTGRES_PASSWORD:-change-me}@postgres:5432/iot_platform
+      - REDIS_URL=redis://redis:6379/0
+      - SKIP_DATABASE_INIT=false
     depends_on:
       - postgres
-      - rabbitmq
-      - mqtt
       - redis
-    
+    networks:
+      - iot_network
+
+  device_management_service:
+    build:
+      context: ./
+      dockerfile: microservices/device-management/Dockerfile
+    environment:
+      - PORT=5002
+      - DATABASE_URL=postgresql://admin:${POSTGRES_PASSWORD:-change-me}@postgres:5432/iot_platform
+      - REDIS_URL=redis://redis:6379/0
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USERNAME=guest
+      - RABBITMQ_PASSWORD=guest
+      - MONGODB_URI=mongodb://mongodb:27017/iot_platform
+      - MONGODB_DATABASE=iot_platform
+      - OPENMETEO_URL=https://api.open-meteo.com/v1/forecast
+      - DOCKER_ENV=true
+    depends_on:
+      - postgres
+      - redis
+      - rabbitmq
+      - mongodb
+      - mqtt
+    networks:
+      - iot_network
+
+  monitoring_service:
+    build:
+      context: ./
+      dockerfile: microservices/monitoring/Dockerfile
+    environment:
+      - PORT=5003
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USERNAME=guest
+      - RABBITMQ_PASSWORD=guest
+      - RABBITMQ_QUEUE=device_events
+      - MONGODB_URI=mongodb://mongodb:27017/iot_platform
+      - MONGODB_DATABASE=iot_platform
+      - ENABLE_RABBITMQ_CONSUMER=true
+    depends_on:
+      - rabbitmq
+      - mongodb
+    networks:
+      - iot_network
+
+  nginx_gateway:
+    image: nginx:stable-alpine
+    ports:
+      - "5000:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - signing_service
+      - device_management_service
+      - monitoring_service
+    networks:
+      - iot_network
 
   iot_device:
     build:
       context: ./iot-device
       dockerfile: Dockerfile
-    ports:
-      - "5002:5002"
     environment:
-      - POSTGRES_USER=admin
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-change-me}
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
-      - POSTGRES_DB=iot_platform
-
-      - RABBITMQ_HOST=rabbitmq
-      - MONGODB_HOST=mongodb
+      - DATABASE_URL=postgresql://admin:${POSTGRES_PASSWORD:-change-me}@postgres:5432/iot_platform
+      - MQTT_BROKER_URL=mqtt
+      - MQTT_BROKER_PORT=1883
+      - MQTT_TOPIC=iot/temp
     depends_on:
-      - rabbitmq
-      - mongodb
       - postgres
       - mqtt
+    networks:
+      - iot_network
 
   end_device:
     build:
       context: ./end-device
       dockerfile: Dockerfile
-    ports:
-      - "5003:5003"
     environment:
-      - POSTGRES_USER=admin
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-change-me}
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
-      - POSTGRES_DB=iot_platform
-      - MONGODB_HOST=mongodb
+      - API_URL=http://nginx_gateway/api
     depends_on:
-      - rabbitmq
-      - postgres
-      - mongodb
-      
+      - nginx_gateway
+    networks:
+      - iot_network
+
 networks:
   iot_network:
     driver: bridge

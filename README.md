@@ -1,72 +1,65 @@
 # Cloud-IOT-Project
 
-Plateforme IoT cloud pour la gestion d'appareils, le monitoring temps réel et la prédiction de mesures environnementales.
+Plateforme IoT cloud pour la gestion d'appareils, le monitoring temps reel et la prediction de mesures environnementales.
 
-Projet réalisé en 2025.
-
-Le dépôt a été nettoyé pour une présentation plus professionnelle : documentation consolidée dans ce README, configuration externalisée, suppression des artefacts inutiles et réduction des effets de bord au démarrage.
+Projet realise en 2025.
 
 ## Vue d'ensemble
 
 L'application combine :
 
-- un backend Flask avec authentification JWT
-- une couche de gestion d'appareils IoT
-- un flux temps réel via MQTT, RabbitMQ, MongoDB et Socket.IO
-- un module de prédiction basé sur scikit-learn
-- un dashboard React pour l'administration et la visualisation
-- un moniteur pour les appareils de bord / end devices
+- 3 microservices Flask (`signing`, `device-management`, `monitoring`)
+- un broker RabbitMQ pour la communication asynchrone entre services
+- MongoDB pour les donnees de monitoring, PostgreSQL pour les donnees relationnelles
+- Redis pour la gestion de token/session rapide
+- Socket.IO pour les mises a jour temps reel cote client
+- un API Gateway NGINX comme point d'entree unique
+- des simulateurs IoT (`iot-device`, `end-device`) pour la collecte et l'observabilite
 
 ## Architecture
 
-### Backend
-- [app.py](app.py) : point d'entrée principal de l'application Flask
-- [config.py](config.py) : configuration centralisée via variables d'environnement
-- [extensions.py](extensions.py) : initialisation des extensions partagées
-- [signing/auth.py](signing/auth.py) : inscription, connexion, déconnexion et révocation JWT
-- [device_management/device_manage.py](device_management/device_manage.py) : routes de gestion des appareils
-- [device_management/dal/dal.py](device_management/dal/dal.py) : accès aux données et helpers de lecture
-- [device_management/business/device_service.py](device_management/business/device_service.py) : publication et simulation des événements
-- [monitoring/monitor.py](monitoring/monitor.py) : stockage et diffusion des mesures
-- [mqtt_client.py](mqtt_client.py) : client MQTT côté serveur
-- [prediction_module.py](prediction_module.py) : entraînement et prédiction ML
-- [wsgi.py](wsgi.py) : entrée de déploiement WSGI pour Gunicorn/uWSGI
+### Microservices
+- [microservices/signing/app.py](microservices/signing/app.py) : auth JWT, register/login/logout, health
+- [microservices/device-management/app.py](microservices/device-management/app.py) : CRUD devices, stats, end-devices, prediction
+- [microservices/monitoring/app.py](microservices/monitoring/app.py) : ingestion RabbitMQ, APIs monitoring, Socket.IO
+
+### Modules metier partages
+- [signing/auth.py](signing/auth.py) : logique authentication
+- [device_management/device_manage.py](device_management/device_manage.py) : endpoints et persistence des devices
+- [device_management/business/device_service.py](device_management/business/device_service.py) : publication d'evenements RabbitMQ
+- [monitoring/monitor.py](monitoring/monitor.py) : consumer RabbitMQ + emission Socket.IO
+- [prediction_module.py](prediction_module.py) : entrainement/prediction ML
+- [config.py](config.py) : configuration centralisee via variables d'environnement
+- [extensions.py](extensions.py) : `db` SQLAlchemy et `socketio`
 
 ### Frontend
 - [iot-dashboard](iot-dashboard/) : application React
-- [iot-dashboard/src/services/api.js](iot-dashboard/src/services/api.js) : client API configurable
-- [iot-dashboard/src/components](iot-dashboard/src/components) : composants UI du tableau de bord
+- [iot-dashboard/src/services/api.js](iot-dashboard/src/services/api.js) : base URL configurable (`REACT_APP_API_BASE_URL`)
 
 ### Services IoT / Edge
-- [iot-device/iot.py](iot-device/iot.py) : simulateur d'appareils IoT
-- [end-device/end_device.py](end-device/end_device.py) : moniteur d'appareil de bord
+- [iot-device/iot.py](iot-device/iot.py) : simulateur IoT MQTT
+- [end-device/end_device.py](end-device/end_device.py) : moniteur systeme end-device
 
-## Fonctionnalités
+### Dossiers complementaires
+- [nginx/nginx.conf](nginx/nginx.conf) : routage API Gateway vers les microservices
+- [kubernetes](kubernetes/) : manifests de deploiement (base actuelle)
 
-- Authentification JWT avec gestion de révocation
-- CRUD des appareils IoT
-- Publication et consommation d'événements via RabbitMQ
-- Ingestion MQTT et diffusion temps réel vers le dashboard
-- Stockage des mesures dans MongoDB
-- Prédiction à partir des données Open-Meteo
-- Visualisation des appareils, statistiques et graphiques dans React
-- Moniteur local pour CPU, mémoire et métriques système
+## Communication inter-services
 
-## État du nettoyage technique
+- `signing` <-> clients: HTTP REST via gateway (`/auth/*`)
+- `device-management` <-> clients: HTTP REST via gateway (`/api/*`, `/predict_device`)
+- `device-management` -> `monitoring`: RabbitMQ (event-driven)
+- `monitoring` -> clients: Socket.IO (`/socket.io/`)
 
-Les points suivants ont été corrigés ou réduits :
+## Data flow
 
-- suppression des fichiers de documentation secondaires pour garder un seul README
-- remplacement des valeurs hardcodées par des variables d'environnement quand c'était possible
-- suppression de plusieurs impressions console au profit du logging
-- suppression d'effets de bord au chargement dans la DAL
-- nettoyage de fichiers morts, doublons et artefacts inutiles
-- normalisation des URL côté frontend
-- consolidation de l'entrée principale Flask
+- Les devices publient des donnees (MQTT / scripts de simulation).
+- `device-management` gere les entites et publie des evenements sur RabbitMQ.
+- `monitoring` consomme RabbitMQ, stocke dans MongoDB et pousse en temps reel via Socket.IO.
 
-## Variables d'environnement principales
+## Variables d'environnement
 
-### Backend
+### Backend/API
 - `SECRET_KEY`
 - `JWT_SECRET_KEY`
 - `JWT_ACCESS_TOKEN_EXPIRES`
@@ -83,7 +76,11 @@ Les points suivants ont été corrigés ou réduits :
 - `MQTT_BROKER_PORT`
 - `MQTT_TOPIC`
 - `MQTT_CLIENT_ID`
+- `MQTT_REFRESH_TIME`
 - `ENABLE_MQTT_CLIENT`
+- `API_MAX_STORED_MESSAGES`
+- `API_KEY_REQUIRED`
+- `API_SECRET_KEY`
 - `SKIP_DATABASE_INIT`
 - `OPENMETEO_URL`
 - `OPEN_METEO_CACHE_DIR`
@@ -92,24 +89,35 @@ Les points suivants ont été corrigés ou réduits :
 - `OPEN_METEO_BACKOFF_FACTOR`
 - `MONGODB_URI`
 - `MONGODB_DATABASE`
+- `DOCKER_ENV`
+- `ENABLE_RABBITMQ_CONSUMER`
 - `PORT`
 - `FLASK_DEBUG`
 
+### End-device script
+- `API_URL` (defaut: `http://localhost:5000/api`)
+
 ### Frontend
-- `REACT_APP_API_BASE_URL`
+- `REACT_APP_API_BASE_URL` (defaut: `http://localhost:5000`)
 
 ## Installation locale
 
-### 1. Backend
+### 1. Backend local (mode developpement)
 
 ```bash
 python -m venv venv
 venv\Scripts\activate
 pip install -r requirements.txt
-python app.py
+python microservices/signing/app.py
+python microservices/device-management/app.py
+python microservices/monitoring/app.py
 ```
 
-Le backend est accessible sur `http://localhost:5000`.
+Par defaut:
+
+- Signing: `http://localhost:5001`
+- Device management: `http://localhost:5002`
+- Monitoring: `http://localhost:5003`
 
 ### 2. Frontend
 
@@ -119,18 +127,48 @@ npm install
 npm start
 ```
 
-Le dashboard est accessible sur `http://localhost:3000`.
+Dashboard disponible sur `http://localhost:3000`.
 
-### 3. Lancement avec Docker Compose
+Configurer `REACT_APP_API_BASE_URL=http://localhost:5000` si vous utilisez le gateway.
+
+### 3. Simulateurs optionnels (hors Docker)
+
+```bash
+python iot-device/iot.py
+python end-device/end_device.py
+```
+
+## Lancement Docker Compose
+
+```bash
+docker compose up --build
+```
+
+Gateway disponible sur `http://localhost:5000`.
+
+Commande legacy equivalente:
 
 ```bash
 docker-compose up --build
 ```
 
-## Endpoints utiles
+Le fichier `docker-compose.yaml` demarre:
 
-### Santé
-- `GET /health`
+- `signing_service`
+- `device_management_service`
+- `monitoring_service`
+- `nginx_gateway`
+- `postgres`, `redis`, `rabbitmq`, `mongodb`, `mqtt`
+- `iot_device`, `end_device`
+
+Le frontend React n'est pas lance par ce compose.
+
+## Endpoints API
+
+### Sante
+- `GET /health/signing`
+- `GET /health/device-management`
+- `GET /health/monitoring`
 
 ### Authentification
 - `POST /auth/register`
@@ -138,62 +176,58 @@ docker-compose up --build
 - `POST /auth/logout`
 - `GET /auth/protected`
 
-### Appareils
+### IoT devices
 - `GET /api/devices`
 - `POST /api/devices`
 - `PUT /api/devices/<mac>`
 - `DELETE /api/devices/<mac>`
+- `POST /api/devices/start-simulation`
 - `GET /api/stats`
 - `GET /api/readings/recent`
 
-### Prédiction
+### End devices
+- `POST /api/end-devices/register`
+- `GET /api/end-devices`
+- `DELETE /api/end-devices/<mac>`
+- `POST /api/end-devices/metrics`
+- `GET /api/end-devices/metrics/<mac>`
+
+### Prediction
 - `POST /predict_device`
 
-## Structure du dépôt
+### Monitoring APIs
+- `GET /api/monitoring/readings/recent`
+- `GET /api/monitoring/end-devices/metrics/recent`
+
+## Structure du depot
 
 ```text
-Cloud-IOT-Project/
-├── app.py
-├── config.py
-├── extensions.py
-├── mqtt_client.py
-├── prediction_module.py
-├── signing/
-├── device_management/
-├── monitoring/
-├── iot-device/
-├── end-device/
-├── iot-dashboard/
-├── docker-compose.yaml
-├── Dockerfile
-├── requirements.txt
-└── wsgi.py
+iot-monitoring-flask/
+|- microservices/
+|  |- signing/
+|  |  |- app.py
+|  |  |- Dockerfile
+|  |- device-management/
+|  |  |- app.py
+|  |  |- Dockerfile
+|  |- monitoring/
+|     |- app.py
+|     |- Dockerfile
+|- signing/
+|- device_management/
+|- monitoring/
+|- iot-device/
+|- end-device/
+|- iot-dashboard/
+|- nginx/
+|  |- nginx.conf
+|- kubernetes/
+|- docker-compose.yaml
+|- requirements.txt
 ```
 
-## Notes de qualité
+## Notes
 
-- le projet reste orienté démonstration / portfolio, mais la base est maintenant plus propre pour GitHub et pour un CV
-- la documentation a été volontairement simplifiée pour éviter la dispersion
-- le code est plus cohérent avec une configuration par environnement, ce qui facilite le déploiement et la maintenance
-
-## English summary
-
-Cloud-IOT-Project is a Flask + React IoT platform for device management, real-time monitoring, and environmental prediction.
-
-### Short setup
-
-1. Create the Python virtual environment and install backend dependencies.
-2. Start the Flask backend.
-3. Install and launch the React dashboard.
-4. Optionally deploy with Docker Compose.
-
-### Main strengths
-
-- centralized configuration
-- JWT authentication with token revocation
-- MQTT, RabbitMQ, MongoDB, and Socket.IO integration
-- reusable WSGI deployment entrypoint
-
-## Licence
-
-Aucune licence n'a été ajoutée pour le moment. Ajouter une licence explicite avant publication publique si nécessaire.
+- Le projet est aligne au modele 3 microservices de l'enonce avec un gateway NGINX.
+- Le dossier `kubernetes/` peut etre etendu pour couvrir les 3 microservices explicitement.
+- Aucune licence n'a ete ajoutee pour le moment.
